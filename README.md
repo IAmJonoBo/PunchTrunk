@@ -15,32 +15,92 @@ A lightweight CLI + CI setup that:
 
 ---
 
+
+## Installation
+
+### Quick Install (Recommended)
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/IAmJonoBo/PunchTrunk/main/scripts/install.sh | bash
+```
+
+This installs the latest release to `/usr/local/bin/punchtrunk`.
+
+### Manual Download
+
+Download pre-built binaries from [GitHub Releases](https://github.com/IAmJonoBo/PunchTrunk/releases):
+
+**Linux (AMD64):**
+```bash
+curl -L https://github.com/IAmJonoBo/PunchTrunk/releases/latest/download/punchtrunk-linux-amd64 -o punchtrunk
+chmod +x punchtrunk
+sudo mv punchtrunk /usr/local/bin/
+```
+
+**macOS (ARM64 - M1/M2):**
+```bash
+curl -L https://github.com/IAmJonoBo/PunchTrunk/releases/latest/download/punchtrunk-darwin-arm64 -o punchtrunk
+chmod +x punchtrunk
+sudo mv punchtrunk /usr/local/bin/
+```
+
+**Windows (AMD64):**
+```powershell
+# Download from: https://github.com/IAmJonoBo/PunchTrunk/releases/latest/download/punchtrunk-windows-amd64.exe
+# Add to PATH
+```
+
+### Container Image
+
+```bash
+docker pull ghcr.io/iamjonobo/punchtrunk:latest
+
+# Run in current directory
+docker run --rm -v $(pwd):/workspace -w /workspace \
+  ghcr.io/iamjonobo/punchtrunk:latest \
+  --mode fmt,lint,hotspots
+```
+
+Container images are signed with [cosign](https://github.com/sigstore/cosign):
+```bash
+cosign verify \
+  --certificate-identity-regexp="^https://github.com/IAmJonoBo/PunchTrunk.*" \
+  --certificate-oidc-issuer="https://token.actions.githubusercontent.com" \
+  ghcr.io/iamjonobo/punchtrunk:latest
+```
+
+### From Source
+
+```bash
+git clone https://github.com/IAmJonoBo/PunchTrunk.git
+cd PunchTrunk
+make build
+sudo mv bin/punchtrunk /usr/local/bin/
+```
+
+---
 ## Quick start
 
-1. **Install Trunk CLI** locally (or let CI do it):
+1. **Install PunchTrunk** (see [Installation](#installation) above)
+
+2. **Install Trunk CLI** (or let CI do it):
    - [Installation guide](https://docs.trunk.io/code-quality/setup-and-installation/initialize-trunk)
-2. **Initialise** Trunk in your repo (first time only):
+   
+3. **Initialise** Trunk in your repo (first time only):
 
    ```bash
    trunk init
    ```
 
-3. **Run the orchestrator** (local dev):
+4. **Run PunchTrunk**:
 
    ```bash
-   go run ./cmd/punchtrunk --mode fmt,lint --autofix=fmt --base-branch=origin/main
+   punchtrunk --mode fmt,lint,hotspots --base-branch=origin/main
    ```
 
-   Or after building:
-
-   ```bash
-   ./bin/punchtrunk --mode fmt,lint --autofix=fmt --base-branch=origin/main
-   ```
-
-4. **CI on GitHub Actions**:
-   - Copy `.github/workflows/ci.yml` to your repo.
-   - On PRs, you’ll get inline annotations from Trunk Action.
-   - Hotspots SARIF uploads to **Code Scanning** (Security tab).
+5. **CI Integration**:
+   - See [Integration Guide](docs/INTEGRATION_GUIDE.md) for GitHub Actions, GitLab CI, CircleCI, and more
+   - Check [example workflows](.github/workflows/)
 
 ---
 

@@ -31,6 +31,18 @@ lint:
     - shfmt@3.6.0
     - trufflehog@3.90.12
     - yamllint@1.37.1
+  # Optional: Enable Semgrep for custom rules and autofixes
+  # Uncomment the following lines to enable Semgrep with the custom rules in semgrep/
+  # disabled:
+  #   - semgrep@1.105.0
+  # definitions:
+  #   - name: semgrep
+  #     files: [python, go, javascript, typescript]
+  #     commands:
+  #       - name: lint
+  #         run: semgrep --config semgrep/ --quiet ${target}
+  #       - name: fix
+  #         run: semgrep --config semgrep/ --autofix ${target}
 actions:
   enabled:
     - trunk-announce
