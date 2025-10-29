@@ -1,0 +1,42 @@
+# Binaries
+bin/
+*.exe
+*.dll
+*.so
+*.dylib
+
+# Test binaries
+*.test
+
+# Output of the go coverage tool
+*.out
+
+# Go workspace file
+go.work
+
+# Build artifacts
+dist/
+build/
+
+# Reports and temporary files
+reports/
+*.sarif
+*.log
+
+# IDE and editor files
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# Trunk cache (local development only)
+.trunk/out/
+.trunk/logs/
+
+# Temporary test repositories
+/tmp/
