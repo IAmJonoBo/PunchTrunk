@@ -421,15 +421,15 @@ docker-compose run --rm punchtrunk
 .PHONY: quality hotspots docker-quality
 
 quality:
-	punchtrunk --mode fmt,lint,hotspots
+ punchtrunk --mode fmt,lint,hotspots
 
 hotspots:
-	punchtrunk --mode hotspots --base-branch=origin/main
+ punchtrunk --mode hotspots --base-branch=origin/main
 
 docker-quality:
-	docker run --rm -v $(PWD):/workspace -w /workspace \
-		ghcr.io/iamjonobo/punchtrunk:latest \
-		--mode fmt,lint,hotspots
+ docker run --rm -v $(PWD):/workspace -w /workspace \
+  ghcr.io/iamjonobo/punchtrunk:latest \
+    --mode fmt,lint,hotspots
 ```
 
 ## Agent Integration
