@@ -1,0 +1,5 @@
+blank_issues_enabled: false
+contact_links:
+  - name: Documentation
+    url: https://github.com/IAmJonoBo/PunchTrunk/tree/main/docs
+    about: Review our docs before opening a request.
