@@ -14,5 +14,5 @@
 
 ## Automation
 
-- Add `make eval-hotspots` target executing hotspot scoring against fixtures and validating SARIF output with `jq` and `sarif-tools`.
+- Add `make eval-hotspots` target executing hotspot scoring against fixtures and validating SARIF output with `jq` and `sarif-tools`. Baseline SARIF lives at `testdata/sarif/hotspots-fixture.sarif`, maintained via `PUNCHTRUNK_CREATE_BASELINE=1 ./scripts/eval-hotspots.sh` when scenarios change.
 - Extend CI with optional nightly workflow to run evaluation suite; fail PRs introducing regressions (e.g., ranking correlation <0.9 or runtime >20% increase).

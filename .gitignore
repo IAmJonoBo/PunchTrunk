@@ -21,6 +21,7 @@ build/
 # Reports and temporary files
 reports/
 *.sarif
+!testdata/sarif/*.sarif
 *.log
 
 # IDE and editor files

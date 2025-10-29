@@ -17,6 +17,7 @@ _This document defines the quality gates enforced at each stage of the PunchTrun
 - **E2E Tests:** All E2E scenarios pass (happy path, error handling, multi-language).
 - **Kitchen Sink Test:** Comprehensive end-to-end validation passes.
 - **Integration Tests:** Real Trunk CLI integration works correctly.
+- **Evaluation Suite:** `make eval-hotspots` passes, matching SARIF baseline fixtures.
 - **Coverage:** Maintain >80% coverage for core logic; thresholds in `docs/testing-strategy.md`.
 
 ### 3. Security Gates
