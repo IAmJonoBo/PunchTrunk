@@ -4,7 +4,9 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"flag"
 	"fmt"
+	"io"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -592,6 +594,196 @@ func TestConfigLoggerReuse(t *testing.T) {
 	}
 	if logger != cfg.log() {
 		t.Fatalf("expected cached logger instance")
+	}
+}
+
+func setupTestFlags(t *testing.T, args []string) {
+	t.Helper()
+	if len(args) == 0 {
+		t.Fatalf("args must include binary name")
+	}
+	oldArgs := os.Args
+	oldCommandLine := flag.CommandLine
+	t.Cleanup(func() {
+		os.Args = oldArgs
+		flag.CommandLine = oldCommandLine
+	})
+	fs := flag.NewFlagSet(args[0], flag.ContinueOnError)
+	fs.SetOutput(io.Discard)
+	flag.CommandLine = fs
+	os.Args = args
+}
+
+func TestParseFlagsDefaultsUseEnv(t *testing.T) {
+	setupTestFlags(t, []string{"punchtrunk"})
+	tmpDir := t.TempDir()
+	t.Setenv("PUNCHTRUNK_JSON_LOGS", "true")
+	t.Setenv("PUNCHTRUNK_TMP_DIR", tmpDir)
+	t.Setenv("PUNCHTRUNK_TRUNK_BINARY", "/custom/trunk")
+
+	cfg := parseFlags()
+
+	if !cfg.JSONLogs {
+		t.Fatalf("expected JSON logs enabled via env")
+	}
+	if cfg.TmpDir != tmpDir {
+		t.Fatalf("expected tmp dir %s, got %s", tmpDir, cfg.TmpDir)
+	}
+	if cfg.TrunkBinary != "/custom/trunk" {
+		t.Fatalf("expected trunk binary from env, got %s", cfg.TrunkBinary)
+	}
+	wantModes := []string{"fmt", "lint", "hotspots"}
+	if !slices.Equal(cfg.Modes, wantModes) {
+		t.Fatalf("unexpected default modes: %v", cfg.Modes)
+	}
+	if cfg.Autofix != "fmt" {
+		t.Fatalf("expected default autofix fmt, got %s", cfg.Autofix)
+	}
+	if cfg.Timeout != 900*time.Second {
+		t.Fatalf("expected default timeout of 900s, got %s", cfg.Timeout)
+	}
+}
+
+func TestParseFlagsOverrides(t *testing.T) {
+	args := []string{
+		"punchtrunk",
+		"--mode", "fmt,lint",
+		"--autofix", "ALL",
+		"--base-branch", "feature/foo",
+		"--timeout", "0",
+		"--dry-run",
+		"--verbose",
+		"--json-logs",
+		"--trunk-config-dir", "/tmp/conf",
+		"--tmp-dir", "./tmp/out",
+		"--sarif-out", "./reports/out.sarif",
+		"--trunk-binary", "/opt/trunk/bin/trunk",
+		"--trunk-arg=--filter=tool:eslint",
+		"--trunk-arg=--foo",
+	}
+	setupTestFlags(t, args)
+
+	cfg := parseFlags()
+
+	wantModes := []string{"fmt", "lint"}
+	if !slices.Equal(cfg.Modes, wantModes) {
+		t.Fatalf("unexpected modes: %v", cfg.Modes)
+	}
+	if cfg.Autofix != "all" {
+		t.Fatalf("expected autofix lowered to all, got %s", cfg.Autofix)
+	}
+	if cfg.BaseBranch != "feature/foo" {
+		t.Fatalf("unexpected base branch: %s", cfg.BaseBranch)
+	}
+	if cfg.Timeout != 0 {
+		t.Fatalf("expected timeout disabled, got %s", cfg.Timeout)
+	}
+	if !cfg.DryRun {
+		t.Fatalf("expected dry-run enabled")
+	}
+	if !cfg.JSONLogs {
+		t.Fatalf("expected json logs enabled")
+	}
+	if !cfg.Verbose {
+		t.Fatalf("expected verbose enabled")
+	}
+	if cfg.TrunkConfigDir != "/tmp/conf" {
+		t.Fatalf("unexpected trunk config dir: %s", cfg.TrunkConfigDir)
+	}
+	if cfg.TmpDir != "./tmp/out" {
+		t.Fatalf("unexpected tmp dir: %s", cfg.TmpDir)
+	}
+	if cfg.SarifOut != "reports/out.sarif" {
+		t.Fatalf("expected cleaned sarif path, got %s", cfg.SarifOut)
+	}
+	if cfg.TrunkBinary != "/opt/trunk/bin/trunk" {
+		t.Fatalf("unexpected trunk binary: %s", cfg.TrunkBinary)
+	}
+	gotArgs := []string(cfg.TrunkArgs)
+	wantArgs := []string{"--filter=tool:eslint", "--foo"}
+	if !slices.Equal(gotArgs, wantArgs) {
+		t.Fatalf("unexpected trunk args: %v", gotArgs)
+	}
+}
+
+func TestRunTrunkFmtAppliesEnvAndArgs(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("shell stubs not supported on Windows in this test")
+	}
+	prev := mustChdir(t, t.TempDir())
+	defer func() {
+		_ = os.Chdir(prev)
+	}()
+
+	stubDir := t.TempDir()
+	stubPath := filepath.Join(stubDir, trunkExecutableName())
+	script := "#!/bin/sh\nset -eu\nout=${PUNCHTRUNK_TEST_OUTPUT:?missing}\nprintf '%s\\n' \"$*\" > \"$out\"\nprintf 'TRUNK_CONFIG_DIR=%s\\n' \"${TRUNK_CONFIG_DIR:-}\" >> \"$out\"\n"
+	if err := os.WriteFile(stubPath, []byte(script), 0o755); err != nil {
+		t.Fatalf("write stub: %v", err)
+	}
+
+	outFile := filepath.Join(t.TempDir(), "fmt.txt")
+	t.Setenv("PUNCHTRUNK_TEST_OUTPUT", outFile)
+
+	cfg := &Config{
+		TrunkPath:      stubPath,
+		TrunkArgs:      []string{"--filter=demo"},
+		TrunkConfigDir: "/tmp/trunk-config",
+	}
+	cfg.logger = newEventLogger(io.Discard, false)
+
+	if err := runTrunkFmt(context.Background(), cfg); err != nil {
+		t.Fatalf("runTrunkFmt: %v", err)
+	}
+
+	data, err := os.ReadFile(outFile)
+	if err != nil {
+		t.Fatalf("read stub output: %v", err)
+	}
+	lines := strings.Split(strings.TrimSpace(string(data)), "\n")
+	if len(lines) != 2 {
+		t.Fatalf("expected two lines of output, got %d: %q", len(lines), lines)
+	}
+	if !strings.Contains(lines[0], "fmt") || !strings.Contains(lines[0], "--filter=demo") {
+		t.Fatalf("unexpected command line: %s", lines[0])
+	}
+	if lines[1] != "TRUNK_CONFIG_DIR=/tmp/trunk-config" {
+		t.Fatalf("expected TRUNK_CONFIG_DIR line, got %s", lines[1])
+	}
+}
+
+func TestRunTrunkCheckSetsExitErr(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("shell stubs not supported on Windows in this test")
+	}
+	prev := mustChdir(t, t.TempDir())
+	defer func() {
+		_ = os.Chdir(prev)
+	}()
+
+	stubDir := t.TempDir()
+	stubPath := filepath.Join(stubDir, trunkExecutableName())
+	if err := os.WriteFile(stubPath, []byte("#!/bin/sh\nexit 7\n"), 0o755); err != nil {
+		t.Fatalf("write stub: %v", err)
+	}
+
+	cfg := &Config{
+		TrunkPath: stubPath,
+		Autofix:   "all",
+	}
+	cfg.logger = newEventLogger(io.Discard, false)
+
+	exitErr = nil
+	t.Cleanup(func() {
+		exitErr = nil
+	})
+
+	err := runTrunkCheck(context.Background(), cfg)
+	if err == nil {
+		t.Fatalf("expected error from failing stub")
+	}
+	if exitErr != err {
+		t.Fatalf("expected exitErr to capture runTrunkCheck error")
 	}
 }
 
