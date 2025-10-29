@@ -32,7 +32,7 @@ jobs:
       - name: Setup Go
         uses: actions/setup-go@v5
         with:
-          go-version: "1.22.x"
+          go-version: "1.25.x"
           cache: true
 
       - name: Install git (if not present)
@@ -97,7 +97,7 @@ jobs:
       - name: Setup Go
         uses: actions/setup-go@v5
         with:
-          go-version: "1.22.x"
+          go-version: "1.25.x"
           cache: true
 
       - name: Build PunchTrunk
@@ -156,7 +156,7 @@ jobs:
       - name: Setup Go
         uses: actions/setup-go@v5
         with:
-          go-version: "1.22.x"
+          go-version: "1.25.x"
           cache: true
 
       - name: Build PunchTrunk
