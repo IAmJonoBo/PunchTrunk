@@ -30,7 +30,7 @@ jobs:
           fetch-depth: 0  # Full history for git operations in tests
 
       - name: Setup Go
-        uses: actions/setup-go@v5
+        uses: actions/setup-go@v6
         with:
           go-version: "1.22.x"
           cache: true
@@ -95,7 +95,7 @@ jobs:
         run: trunk --version
 
       - name: Setup Go
-        uses: actions/setup-go@v5
+        uses: actions/setup-go@v6
         with:
           go-version: "1.22.x"
           cache: true
@@ -154,7 +154,7 @@ jobs:
           fetch-depth: 0
 
       - name: Setup Go
-        uses: actions/setup-go@v5
+        uses: actions/setup-go@v6
         with:
           go-version: "1.22.x"
           cache: true
