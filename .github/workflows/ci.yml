@@ -1,0 +1,54 @@
+name: CI
+
+on:
+  pull_request:
+  push:
+    branches: [ main ]
+
+jobs:
+  lint-and-hotspots:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      # Cache Trunk tools (ephemeral-friendly)
+      - name: Cache Trunk tools
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/trunk
+          key: trunk-${{ runner.os }}-${{ hashFiles('.trunk/trunk.yaml') }}
+
+      # Trunk meta-linter annotations
+      - name: Trunk Check (annotations)
+        uses: trunk-io/trunk-action@v1
+        with:
+          arguments: check
+
+      # Install Go and build the CLI
+      - uses: actions/setup-go@v5
+        with:
+          go-version: '1.22.x'
+
+      - name: Build orchestrator
+        run: |
+          mkdir -p bin
+          go build -o bin/trunk-orchestrator ./cmd/trunk-orchestrator
+
+      - name: Run hotspots + (optional) fmt/lint
+        run: |
+          ./bin/trunk-orchestrator --mode hotspots --base-branch=origin/${{ github.event_name == 'pull_request' && github.event.pull_request.base.ref || 'main' }}
+
+      # Upload SARIF to GitHub Code Scanning
+      - name: Upload SARIF
+        uses: github/codeql-action/upload-sarif@v3
+        with:
+          sarif_file: reports/hotspots.sarif
+
+      # Optional: reviewdog for extra comments (disabled by default)
+      # - uses: reviewdog/action-setup@v1
+      # - name: ESLint via reviewdog (example)
+      #   run: |
+      #     npx eslint -f checkstyle . | reviewdog -f=checkstyle -reporter=github-pr-review -filter-mode=diff_context -fail-on-error

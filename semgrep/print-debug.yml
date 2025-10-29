@@ -1,0 +1,8 @@
+rules:
+  - id: py-print-debug
+    languages: [python]
+    message: "Debug print detected; consider using logging."
+    patterns:
+      - pattern: print(...)
+    severity: INFO
+    fix: "logging.info(...)"

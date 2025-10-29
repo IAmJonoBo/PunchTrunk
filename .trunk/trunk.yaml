@@ -1,0 +1,24 @@
+version: 0.1
+cli:
+  version: 1.22.2
+repo:
+  trunk_branch: main
+
+# Example linters/formatters you can expand
+linters:
+  enabled:
+    - eslint@latest
+    - ruff@latest
+    - shellcheck@latest
+    - yamllint@latest
+    - markdownlint@latest
+formatters:
+  enabled:
+    - prettier@latest
+    - black@latest
+    - shfmt@latest
+
+# Optionally wire custom tools or Semgrep rules:
+# custom_linters:
+#   - name: semgrep
+#     run: semgrep --config semgrep --error --json
