@@ -3,7 +3,7 @@ BIN := bin/punchtrunk
 VERSION ?= dev
 LDFLAGS := -s -w -X main.Version=$(VERSION)
 
-.PHONY: build run fmt lint hotspots docker sign test
+.PHONY: build run fmt lint hotspots docker sign test offline-bundle
 
 build:
 	mkdir -p bin
@@ -23,6 +23,9 @@ test:
 
 hotspots: build
 	$(BIN) --mode hotspots
+
+offline-bundle: build
+	./scripts/build-offline-bundle.sh --output-dir dist
 
 docker:
 	docker build -t punchtrunk:local .

@@ -8,6 +8,7 @@ A lightweight CLI + CI setup that:
 - Emits a **SARIF** file for hotspots (uploadable to GitHub code scanning)
 - Integrates with **Trunk Action** for inline PR annotations
 - Works out-of-the-box on **ephemeral runners** with caching
+- Provides **air-gap diagnostics** via `--mode diagnose-airgap`
 
 > Status: starter kit. Designed to be hermetic, fast, and agent-friendly.
 > Rebranding note: formerly `trunk-orchestrator`, now published as **PunchTrunk** to reflect the broader workflow focus.
@@ -131,7 +132,9 @@ sudo mv bin/punchtrunk /usr/local/bin/
 PunchTrunk [flags]
 
 Flags:
-   --mode=fmt,lint,hotspots   Which phases to run (default: fmt,lint,hotspots)
+   --mode=fmt,lint,hotspots   Which phases to run (default: fmt,lint,hotspots). Include
+                              `diagnose-airgap` to emit readiness checks without
+                              running Trunk.
    --autofix=none|fmt|lint|all  Which fixes to apply (default: fmt)
    --base-branch=<git ref>    Base for change detection (default: origin/main)
    --max-procs=<n>            Parallelism cap (default: logical CPUs)
@@ -161,13 +164,26 @@ Flags:
 # Air-gapped runner (skip installer, point at cached binary)
 PUNCHTRUNK_AIRGAPPED=1 ./bin/punchtrunk --mode lint --trunk-binary=/opt/trunk/bin/trunk
 
+```
+
 ## Offline / air-gapped environments
 
 - PunchTrunk auto-installs Trunk when it cannot find the CLI on `PATH`. Set `PUNCHTRUNK_AIRGAPPED=1` to disable the download step on runners without outbound network access.
 - Supply the executable explicitly with `--trunk-binary=/path/to/trunk` or `PUNCHTRUNK_TRUNK_BINARY=/path/to/trunk`. The path is validated for existence and executability before any Trunk command is executed.
 - Cached installs created by PunchTrunk live under `~/.trunk/bin`; reuse that path for future jobs if you pre-bake the toolchain.
 - When the workspace is read-only, hotspot SARIF output automatically falls back to `/tmp/punchtrunk/reports/<file>` and a log line explains the redirect.
+
+### Diagnose offline readiness
+
+Run the diagnostic mode to confirm an environment is ready for sealed networks:
+
+```bash
+punchtrunk --mode diagnose-airgap --sarif-out=/workspace/reports/hotspots.sarif
 ```
+
+- Produces a JSON report on stdout with check summaries (git availability, trunk binary, air-gap env vars, SARIF destination writability)
+- Returns a non-zero exit when blocking errors remain so agents can gate provisioning workflows
+- Skips Trunk installs and other side effects, making it safe to run before network access is revoked
 
 ---
 

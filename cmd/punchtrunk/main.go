@@ -80,8 +80,22 @@ func main() {
 		defer cancel()
 	}
 
-	if err := ensureEnvironment(ctx, cfg); err != nil {
-		log.Fatalf("environment setup failed: %v", err)
+	needsEnvironment := false
+	for _, raw := range cfg.Modes {
+		mode := strings.TrimSpace(strings.ToLower(raw))
+		if mode == "" {
+			continue
+		}
+		if mode != "diagnose-airgap" {
+			needsEnvironment = true
+			break
+		}
+	}
+
+	if needsEnvironment {
+		if err := ensureEnvironment(ctx, cfg); err != nil {
+			log.Fatalf("environment setup failed: %v", err)
+		}
 	}
 
 	for _, raw := range cfg.Modes {
@@ -97,6 +111,8 @@ func main() {
 			err = runTrunkCheck(ctx, cfg)
 		case "hotspots":
 			err = runHotspots(ctx, cfg)
+		case "diagnose-airgap":
+			err = runDiagnoseAirgap(ctx, cfg)
 		default:
 			if cfg.Verbose {
 				log.Printf("Skipping unknown mode %q", raw)
@@ -412,6 +428,34 @@ type Hotspot struct {
 	Score      float64
 }
 
+const (
+	diagnoseStatusOK    = "ok"
+	diagnoseStatusWarn  = "warn"
+	diagnoseStatusError = "error"
+)
+
+type DiagnoseCheck struct {
+	Name           string `json:"name"`
+	Status         string `json:"status"`
+	Message        string `json:"message"`
+	Recommendation string `json:"recommendation,omitempty"`
+}
+
+type DiagnoseSummary struct {
+	Total int `json:"total"`
+	OK    int `json:"ok"`
+	Warn  int `json:"warn"`
+	Error int `json:"error"`
+}
+
+type DiagnoseReport struct {
+	Timestamp string          `json:"timestamp"`
+	Airgapped bool            `json:"airgapped"`
+	SarifOut  string          `json:"sarif_out"`
+	Checks    []DiagnoseCheck `json:"checks"`
+	Summary   DiagnoseSummary `json:"summary"`
+}
+
 func ensureEnvironment(ctx context.Context, cfg *Config) error {
 	if _, err := exec.LookPath("git"); err != nil {
 		return fmt.Errorf("git is required: %w", err)
@@ -457,6 +501,219 @@ func ensureEnvironment(ctx context.Context, cfg *Config) error {
 	}
 	cfg.TrunkPath = trunkPath
 	return nil
+}
+
+func runDiagnoseAirgap(ctx context.Context, cfg *Config) error {
+	report := diagnoseAirgap(cfg)
+	data, err := json.MarshalIndent(report, "", "  ")
+	if err != nil {
+		return fmt.Errorf("marshal diagnostics: %w", err)
+	}
+	fmt.Println(string(data))
+	if report.Summary.Error > 0 {
+		return fmt.Errorf("diagnostics found %d blocking issue(s)", report.Summary.Error)
+	}
+	return nil
+}
+
+func diagnoseAirgap(cfg *Config) DiagnoseReport {
+	if cfg == nil {
+		cfg = &Config{}
+	}
+	report := DiagnoseReport{
+		Timestamp: time.Now().UTC().Format(time.RFC3339),
+		Airgapped: airgapMode(),
+		SarifOut:  cfg.SarifOut,
+	}
+	report.Checks = append(report.Checks, checkGitExecutable())
+	report.Checks = append(report.Checks, checkTrunkBinary(cfg))
+	report.Checks = append(report.Checks, checkAirgapEnv())
+	report.Checks = append(report.Checks, checkSarifOut(cfg))
+	report.Summary = summarizeDiagnoseChecks(report.Checks)
+	return report
+}
+
+func summarizeDiagnoseChecks(checks []DiagnoseCheck) DiagnoseSummary {
+	summary := DiagnoseSummary{Total: len(checks)}
+	for _, c := range checks {
+		switch c.Status {
+		case diagnoseStatusOK:
+			summary.OK++
+		case diagnoseStatusWarn:
+			summary.Warn++
+		case diagnoseStatusError:
+			summary.Error++
+		}
+	}
+	return summary
+}
+
+func checkGitExecutable() DiagnoseCheck {
+	path, err := exec.LookPath("git")
+	if err != nil {
+		return DiagnoseCheck{
+			Name:           "git",
+			Status:         diagnoseStatusError,
+			Message:        "git executable not found in PATH",
+			Recommendation: "Install git and ensure it is available to PunchTrunk.",
+		}
+	}
+	return DiagnoseCheck{
+		Name:    "git",
+		Status:  diagnoseStatusOK,
+		Message: fmt.Sprintf("git found at %s", path),
+	}
+}
+
+func checkTrunkBinary(cfg *Config) DiagnoseCheck {
+	name := "trunk_binary"
+	var sources []string
+	if cfg != nil && cfg.TrunkBinary != "" {
+		sources = append(sources, cfg.TrunkBinary)
+	}
+	if env := strings.TrimSpace(os.Getenv("PUNCHTRUNK_TRUNK_BINARY")); env != "" {
+		sources = append(sources, env)
+	}
+	sources = uniqueStrings(sources)
+	for _, src := range sources {
+		resolved, err := resolveTrunkBinary(src)
+		if err != nil {
+			return DiagnoseCheck{
+				Name:           name,
+				Status:         diagnoseStatusError,
+				Message:        fmt.Sprintf("trunk binary %s is invalid: %v", src, err),
+				Recommendation: "Provide a valid trunk executable via --trunk-binary or PUNCHTRUNK_TRUNK_BINARY.",
+			}
+		}
+		message := fmt.Sprintf("resolved trunk executable at %s", resolved)
+		cmd := exec.Command(resolved, "--version")
+		cmd.Env = append(os.Environ(), "TRUNK_TELEMETRY_OPTOUT=1")
+		out, err := cmd.CombinedOutput()
+		if err != nil {
+			return DiagnoseCheck{
+				Name:           name,
+				Status:         diagnoseStatusWarn,
+				Message:        fmt.Sprintf("%s but '--version' failed: %v (%s)", message, err, strings.TrimSpace(string(out))),
+				Recommendation: "Verify the trunk binary runs without network access or rebuild the offline bundle.",
+			}
+		}
+		version := strings.TrimSpace(string(out))
+		if idx := strings.Index(version, "\n"); idx >= 0 {
+			version = version[:idx]
+		}
+		if version == "" {
+			version = "unknown version"
+		}
+		return DiagnoseCheck{
+			Name:    name,
+			Status:  diagnoseStatusOK,
+			Message: fmt.Sprintf("%s (version: %s)", message, version),
+		}
+	}
+	if home, err := os.UserHomeDir(); err == nil {
+		candidate := filepath.Join(home, ".trunk", "bin", trunkExecutableName())
+		if resolved, err := resolveTrunkBinary(candidate); err == nil {
+			return DiagnoseCheck{
+				Name:           name,
+				Status:         diagnoseStatusWarn,
+				Message:        fmt.Sprintf("found trunk at %s but PUNCHTRUNK_TRUNK_BINARY is not set", resolved),
+				Recommendation: "Export PUNCHTRUNK_TRUNK_BINARY or use --trunk-binary to avoid auto-installation attempts.",
+			}
+		}
+	}
+	return DiagnoseCheck{
+		Name:           name,
+		Status:         diagnoseStatusError,
+		Message:        "no trunk binary detected",
+		Recommendation: "Set PUNCHTRUNK_TRUNK_BINARY or pass --trunk-binary pointing at an offline bundle.",
+	}
+}
+
+func checkAirgapEnv() DiagnoseCheck {
+	if airgapMode() {
+		return DiagnoseCheck{
+			Name:    "airgap_env",
+			Status:  diagnoseStatusOK,
+			Message: "PUNCHTRUNK_AIRGAPPED is enabled",
+		}
+	}
+	return DiagnoseCheck{
+		Name:           "airgap_env",
+		Status:         diagnoseStatusWarn,
+		Message:        "PUNCHTRUNK_AIRGAPPED is not set",
+		Recommendation: "Export PUNCHTRUNK_AIRGAPPED=1 to prevent PunchTrunk from downloading dependencies.",
+	}
+}
+
+func checkSarifOut(cfg *Config) DiagnoseCheck {
+	name := "sarif_out"
+	if cfg == nil || strings.TrimSpace(cfg.SarifOut) == "" {
+		return DiagnoseCheck{
+			Name:           name,
+			Status:         diagnoseStatusWarn,
+			Message:        "sarif-out path not configured",
+			Recommendation: "Use --sarif-out or --tmp-dir to direct hotspot reports to a writable location.",
+		}
+	}
+	dir := filepath.Dir(cfg.SarifOut)
+	info, err := os.Stat(dir)
+	if err != nil {
+		if errors.Is(err, os.ErrNotExist) {
+			return DiagnoseCheck{
+				Name:           name,
+				Status:         diagnoseStatusWarn,
+				Message:        fmt.Sprintf("directory %s does not exist", dir),
+				Recommendation: "Create the directory or point --sarif-out to an accessible path.",
+			}
+		}
+		return DiagnoseCheck{
+			Name:           name,
+			Status:         diagnoseStatusError,
+			Message:        fmt.Sprintf("unable to stat %s: %v", dir, err),
+			Recommendation: "Verify permissions or provide --tmp-dir when using read-only workspaces.",
+		}
+	}
+	if !info.IsDir() {
+		return DiagnoseCheck{
+			Name:           name,
+			Status:         diagnoseStatusError,
+			Message:        fmt.Sprintf("%s is not a directory", dir),
+			Recommendation: "Adjust --sarif-out to target a directory path.",
+		}
+	}
+	testFile := filepath.Join(dir, fmt.Sprintf(".punchtrunk-diagnose-%d", time.Now().UnixNano()))
+	if err := os.WriteFile(testFile, []byte("diagnostic"), 0o644); err != nil {
+		return DiagnoseCheck{
+			Name:           name,
+			Status:         diagnoseStatusError,
+			Message:        fmt.Sprintf("failed to write to %s: %v", dir, err),
+			Recommendation: "Adjust permissions or configure --tmp-dir to a writable location.",
+		}
+	}
+	if err := os.Remove(testFile); err != nil {
+		log.Printf("WARN: unable to clean up diagnostic file %s: %v", testFile, err)
+	}
+	return DiagnoseCheck{
+		Name:    name,
+		Status:  diagnoseStatusOK,
+		Message: fmt.Sprintf("verified write access to %s", dir),
+	}
+}
+
+func uniqueStrings(values []string) []string {
+	seen := make(map[string]struct{}, len(values))
+	var result []string
+	for _, v := range values {
+		if v == "" {
+			continue
+		}
+		if _, ok := seen[v]; ok {
+			continue
+		}
+		seen[v] = struct{}{}
+		result = append(result, v)
+	}
+	return result
 }
 
 func resolveTrunkBinary(p string) (string, error) {

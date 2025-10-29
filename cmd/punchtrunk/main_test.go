@@ -189,6 +189,205 @@ func TestRunHotspotsRedirectsOnReadOnlyWorkspace(t *testing.T) {
 	})
 }
 
+func TestOfflineBundleSupportsAirgappedHotspots(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("offline bundle packaging not validated on Windows")
+	}
+	if _, err := exec.LookPath("tar"); err != nil {
+		t.Skipf("tar not available: %v", err)
+	}
+
+	root := repoRoot(t)
+
+	binDir := t.TempDir()
+	punchBinary := filepath.Join(binDir, "punchtrunk")
+	build := exec.Command("go", "build", "-o", punchBinary, "./cmd/punchtrunk")
+	build.Dir = root
+	build.Env = append(os.Environ(), "CGO_ENABLED=0")
+	if out, err := build.CombinedOutput(); err != nil {
+		t.Fatalf("go build punchtrunk: %v\n%s", err, out)
+	}
+
+	stubDir := t.TempDir()
+	trunkStub := filepath.Join(stubDir, trunkExecutableName())
+	stub := "#!/usr/bin/env bash\nset -euo pipefail\nif [[ \"${1:-}\" == \"--version\" ]]; then\n  echo \"stub trunk version 0.0.0\"\n  exit 0\nfi\nexit 0\n"
+	if err := os.WriteFile(trunkStub, []byte(stub), 0o755); err != nil {
+		t.Fatalf("write trunk stub: %v", err)
+	}
+
+	cacheDir := t.TempDir()
+	if err := os.WriteFile(filepath.Join(cacheDir, "tool.lock"), []byte("demo"), 0o644); err != nil {
+		t.Fatalf("write cache stub: %v", err)
+	}
+
+	script := filepath.Join(root, "scripts", "build-offline-bundle.sh")
+	if _, err := os.Stat(script); err != nil {
+		t.Fatalf("bundle script missing: %v", err)
+	}
+
+	outDir := t.TempDir()
+	bundleName := "test-offline-bundle.tgz"
+	cmd := exec.Command("bash", script,
+		"--punchtrunk-binary", punchBinary,
+		"--trunk-binary", trunkStub,
+		"--cache-dir", cacheDir,
+		"--config-dir", filepath.Join(root, ".trunk"),
+		"--output-dir", outDir,
+		"--bundle-name", bundleName,
+		"--force",
+	)
+	cmd.Dir = root
+	if out, err := cmd.CombinedOutput(); err != nil {
+		t.Fatalf("build offline bundle: %v\n%s", err, out)
+	}
+
+	bundlePath := filepath.Join(outDir, bundleName)
+	if _, err := os.Stat(bundlePath); err != nil {
+		t.Fatalf("bundle not created: %v", err)
+	}
+	if _, err := os.Stat(bundlePath + ".sha256"); err != nil {
+		t.Fatalf("bundle checksum missing: %v", err)
+	}
+
+	extractDir := t.TempDir()
+	untar := exec.Command("tar", "-xzf", bundlePath, "-C", extractDir)
+	if out, err := untar.CombinedOutput(); err != nil {
+		t.Fatalf("untar bundle: %v\n%s", err, out)
+	}
+	entries, err := os.ReadDir(extractDir)
+	if err != nil {
+		t.Fatalf("read extract dir: %v", err)
+	}
+	if len(entries) != 1 {
+		t.Fatalf("expected single bundle root, got %d", len(entries))
+	}
+	bundleRoot := filepath.Join(extractDir, entries[0].Name())
+	bundlePunch := filepath.Join(bundleRoot, "bin", "punchtrunk")
+	bundleTrunk := filepath.Join(bundleRoot, "trunk", "bin", trunkExecutableName())
+	manifest := filepath.Join(bundleRoot, "manifest.json")
+	checksums := filepath.Join(bundleRoot, "checksums.txt")
+	if _, err := os.Stat(bundlePunch); err != nil {
+		t.Fatalf("bundle punchtrunk missing: %v", err)
+	}
+	if _, err := os.Stat(bundleTrunk); err != nil {
+		t.Fatalf("bundle trunk missing: %v", err)
+	}
+	if _, err := os.Stat(manifest); err != nil {
+		t.Fatalf("manifest missing: %v", err)
+	}
+	contents, err := os.ReadFile(checksums)
+	if err != nil {
+		t.Fatalf("read checksums: %v", err)
+	}
+	if !strings.Contains(string(contents), "bin/punchtrunk") {
+		t.Fatalf("checksums missing punchtrunk entry: %s", contents)
+	}
+
+	repo := t.TempDir()
+	gitInit(t, repo)
+	writeFile(t, repo, "main.go", "package main\n\nfunc main() {}\n")
+	gitAddCommit(t, repo, "initial commit")
+	writeFile(t, repo, "main.go", "package main\n\nfunc main() {\n    println(\"hi\")\n}\n")
+	gitAddCommit(t, repo, "update main")
+
+	cmd = exec.Command(bundlePunch,
+		"--mode", "hotspots",
+		"--base-branch", "HEAD~1",
+		"--trunk-binary", bundleTrunk,
+		"--timeout", "30",
+	)
+	cmd.Dir = repo
+	cmd.Env = append(os.Environ(),
+		"PUNCHTRUNK_AIRGAPPED=1",
+		fmt.Sprintf("PUNCHTRUNK_TRUNK_BINARY=%s", bundleTrunk),
+	)
+	if out, err := cmd.CombinedOutput(); err != nil {
+		t.Fatalf("bundle punchtrunk execution failed: %v\n%s", err, out)
+	}
+
+	sarifPath := filepath.Join(repo, "reports", "hotspots.sarif")
+	if _, err := os.Stat(sarifPath); err != nil {
+		t.Fatalf("expected SARIF output: %v", err)
+	}
+}
+
+func TestDiagnoseAirgapHappyPath(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("diagnostic shell script relies on POSIX sh")
+	}
+	t.Setenv("PUNCHTRUNK_AIRGAPPED", "1")
+	t.Setenv("PUNCHTRUNK_TRUNK_BINARY", "")
+	reportsDir := t.TempDir()
+	trunkPath := filepath.Join(reportsDir, "trunk")
+	script := "#!/bin/sh\necho trunk version 1.2.3\n"
+	if err := os.WriteFile(trunkPath, []byte(script), 0o755); err != nil {
+		t.Fatalf("write trunk script: %v", err)
+	}
+	sarifDir := filepath.Join(reportsDir, "reports")
+	if err := os.MkdirAll(sarifDir, 0o755); err != nil {
+		t.Fatalf("mkdir reports: %v", err)
+	}
+	cfg := &Config{
+		TrunkBinary: trunkPath,
+		SarifOut:    filepath.Join(sarifDir, "hotspots.sarif"),
+	}
+	report := diagnoseAirgap(cfg)
+	if !report.Airgapped {
+		t.Fatalf("expected airgapped true got false")
+	}
+	if report.Summary.Error != 0 {
+		t.Fatalf("expected no errors: %+v", report.Summary)
+	}
+	if report.Summary.OK == 0 {
+		t.Fatalf("expected OK checks: %+v", report.Summary)
+	}
+	foundTrunk := false
+	for _, c := range report.Checks {
+		if c.Name == "trunk_binary" {
+			foundTrunk = true
+			if c.Status != diagnoseStatusOK {
+				t.Fatalf("expected trunk check ok: %+v", c)
+			}
+		}
+	}
+	if !foundTrunk {
+		t.Fatalf("expected trunk check present: %+v", report.Checks)
+	}
+}
+
+func TestDiagnoseAirgapDetectsMissingTrunk(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("diagnostic shell script relies on POSIX sh")
+	}
+	t.Setenv("PUNCHTRUNK_AIRGAPPED", "1")
+	newHome := t.TempDir()
+	t.Setenv("HOME", newHome)
+	reportsDir := filepath.Join(newHome, "reports")
+	if err := os.MkdirAll(reportsDir, 0o755); err != nil {
+		t.Fatalf("mkdir reports: %v", err)
+	}
+	cfg := &Config{
+		SarifOut: filepath.Join(reportsDir, "hotspots.sarif"),
+	}
+	report := diagnoseAirgap(cfg)
+	if report.Summary.Error == 0 {
+		t.Fatalf("expected errors: %+v", report.Summary)
+	}
+	found := false
+	for _, c := range report.Checks {
+		if c.Name == "trunk_binary" {
+			found = true
+			if c.Status != diagnoseStatusError {
+				t.Fatalf("expected trunk check error: %+v", c)
+			}
+			break
+		}
+	}
+	if !found {
+		t.Fatalf("expected trunk check present: %+v", report.Checks)
+	}
+}
+
 func gitInit(t *testing.T, dir string) {
 	t.Helper()
 	runGit(t, dir, "init")
@@ -222,6 +421,16 @@ func writeFile(t *testing.T, dir, name, contents string) {
 	if err := os.WriteFile(filepath.Join(dir, name), []byte(contents), 0o644); err != nil {
 		t.Fatalf("writeFile %s: %v", name, err)
 	}
+}
+
+func repoRoot(t *testing.T) string {
+	t.Helper()
+	cmd := exec.Command("git", "rev-parse", "--show-toplevel")
+	out, err := cmd.Output()
+	if err != nil {
+		t.Fatalf("git rev-parse: %v", err)
+	}
+	return strings.TrimSpace(string(out))
 }
 
 func mustChdir(t *testing.T, dir string) string {

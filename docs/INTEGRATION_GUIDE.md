@@ -12,6 +12,7 @@ This guide covers integrating PunchTrunk into CI/CD pipelines, ephemeral runners
 - [CircleCI](#circleci)
 - [Jenkins](#jenkins)
 - [Ephemeral Runners](#ephemeral-runners)
+- [Offline & Air-Gapped Environments](#offline--air-gapped-environments)
 - [Container-Based Workflows](#container-based-workflows)
 - [Agent Integration](#agent-integration)
 - [Best Practices](#best-practices)
@@ -391,6 +392,76 @@ spec:
         - name: workspace
           mountPath: /workspace
 ```
+
+## Offline & Air-Gapped Environments
+
+PunchTrunk provides an offline bundle workflow so agents can run without external network access. The bundle includes the PunchTrunk binary, a Trunk CLI executable, the repo-specific Trunk configuration, optional cached toolchain assets, and verified checksums.
+
+### Build the offline bundle
+
+```bash
+make offline-bundle
+# or customize the output
+./scripts/build-offline-bundle.sh --output-dir dist --bundle-name punchtrunk-offline.tar.gz
+```
+
+Useful flags include:
+
+- `--punchtrunk-binary` to point at a custom build (for example a nightly artifact).
+- `--trunk-binary` to reuse a pre-installed Trunk CLI path when building on a staging host.
+- `--cache-dir` to embed an existing `~/.cache/trunk` so linters run without outbound downloads.
+- `--no-cache` to produce a minimal archive when storage is tight.
+
+The script writes `<bundle>.tar.gz` and a companion `<bundle>.tar.gz.sha256` checksum to the chosen output directory.
+
+### Use the bundle on target hosts
+
+1. Copy the archive and its checksum to the offline machine.
+1. Verify integrity:
+
+```bash
+shasum -a 256 punchtrunk-offline-linux-amd64.tar.gz
+cat punchtrunk-offline-linux-amd64.tar.gz.sha256
+```
+
+1. Extract and configure environment variables:
+
+```bash
+tar -xzf punchtrunk-offline-linux-amd64.tar.gz
+export PUNCHTRUNK_HOME="$(pwd)/punchtrunk-offline-linux-amd64"
+export PATH="${PUNCHTRUNK_HOME}/bin:${PUNCHTRUNK_HOME}/trunk/bin:${PATH}"
+export PUNCHTRUNK_TRUNK_BINARY="${PUNCHTRUNK_HOME}/trunk/bin/trunk"
+export PUNCHTRUNK_AIRGAPPED=1
+```
+
+1. Run PunchTrunk as usual, forwarding `--trunk-binary` when scripts need an explicit path:
+
+```bash
+${PUNCHTRUNK_HOME}/bin/punchtrunk --mode hotspots --base-branch HEAD~1 --trunk-binary "${PUNCHTRUNK_TRUNK_BINARY}"
+```
+
+### Validate the air-gapped setup
+
+Before sealing network access, run PunchTrunk's diagnostic mode to confirm prerequisites:
+
+```bash
+${PUNCHTRUNK_HOME}/bin/punchtrunk --mode diagnose-airgap \
+  --trunk-binary "${PUNCHTRUNK_TRUNK_BINARY}" \
+  --sarif-out "${PUNCHTRUNK_HOME}/reports/hotspots.sarif"
+```
+
+- Emits a JSON document on stdout enumerating git availability, the resolved Trunk binary, air-gap environment flags, and SARIF writeability
+- Exits non-zero when any check reports `error`, allowing provisioning scripts to halt before runtime failures
+- Skips installer downloads and other side effects so it is safe to run on staging hosts and production images alike
+
+### Bundle contents
+
+- `bin/punchtrunk` – the PunchTrunk CLI the bundle was built from.
+- `trunk/bin/trunk` – the pinned Trunk CLI executable.
+- `trunk/config` – repository Trunk configuration used by PunchTrunk.
+- `trunk/cache` – optional cached toolchain assets for offline execution.
+- `manifest.json` – metadata including creation timestamp and versions.
+- `checksums.txt` – SHA-256 hashes for every bundled file.
 
 ## Container-Based Workflows
 
