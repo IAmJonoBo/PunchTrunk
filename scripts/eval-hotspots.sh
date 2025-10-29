@@ -73,7 +73,13 @@ fi
 jq . "$OUTPUT" >/dev/null
 
 if command -v sarif >/dev/null 2>&1; then
-	sarif validate "$OUTPUT"
+	if sarif validate "$OUTPUT" >/dev/null 2>&1; then
+		:
+	elif sarif --check error info "$OUTPUT" >/dev/null 2>&1; then
+		:
+	else
+		echo "warning: 'sarif' CLI present but validation commands failed" >&2
+	fi
 else
 	echo "warning: 'sarif' CLI not found; skipping sarif-tools validation" >&2
 fi

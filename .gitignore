@@ -27,6 +27,7 @@ reports/
 # IDE and editor files
 .vscode/
 .idea/
+.venv/
 *.swp
 *.swo
 *~

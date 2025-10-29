@@ -1,0 +1,4 @@
+# Top-level Python dependencies for PunchTrunk tooling
+# Managed via `uv pip compile` / `uv pip sync`
+
+sarif-tools

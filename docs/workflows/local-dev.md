@@ -7,6 +7,7 @@ _This is a How-to guide in the Diátaxis framework._
 - Go 1.22 or later (`go version` should report ≥1.22; stay current with the latest Go 1.22 patch release to match CI).
 - Trunk CLI optional: PunchTrunk auto-installs the pinned CLI into `~/.trunk/bin` if it is missing. On air-gapped runners export `PUNCHTRUNK_AIRGAPPED=1` and point at an existing binary with `--trunk-binary` or `PUNCHTRUNK_TRUNK_BINARY` so the download step is skipped.
 - Git with history for the working branch. For shallow clones fetch depth with `git fetch --deepen=1000` if hotspots need longer history.
+- Python tooling via `uv`: run `uv venv` once, then `uv pip sync requirements.lock` to install the `sarif` CLI used by `make eval-hotspots`.
 
 ## Bootstrap
 

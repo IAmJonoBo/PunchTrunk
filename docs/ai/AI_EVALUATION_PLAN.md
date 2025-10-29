@@ -43,6 +43,7 @@ This plan ties together evaluation requirements from the quality and testing doc
 
 - `make test`: Runs Go tests and Bats shell suites (per QA checklist).
 - `make eval-hotspots`: Builds binary, executes `scripts/eval-hotspots.sh`, validates SARIF, and compares against baseline. Fails the gate if output diverges.
+- Manage Python tooling with `uv`: `uv venv` (once) then `uv pip sync requirements.lock` to provision the `sarif` CLI for schema checks.
 - `./bin/punchtrunk --mode fmt,lint`: Required static analysis gate prior to merge; mirrors QA checklist.
 - Nightly (optional) workflow: schedule `make eval-hotspots` and extended integration runs; alert on metric regressions (ρ, runtime, diff).
 - CI must retain `fetch-depth: 0` and upload SARIF via `codeql-action` (operations/ci.md); record deviations in `docs/CONVENTIONS.md`.
