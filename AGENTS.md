@@ -3,23 +3,24 @@
 ## Repo At A Glance
 
 - Purpose: thin Go CLI that wraps `trunk fmt`, `trunk check`, and hotspot scoring so linters stay fast and hermetic.
-- Primary entrypoint: `cmd/trunk-orchestrator/main.go` (single binary, no subpackages).
+- Primary entrypoint: `cmd/punchtrunk/main.go` (single binary, no subpackages).
 - Outputs: writes hotspot SARIF to `reports/hotspots.sarif` for GitHub Code Scanning.
 - Core configs: `.trunk/trunk.yaml` plus overrides in `.trunk/configs/`; Make targets in `Makefile` mirror common flows.
+- Rebranded from `trunk-orchestrator`; older scripts may still reference the former name.
 
 ## Required Tooling
 
-- Go 1.20+ for local builds; CI pins 1.22.x (see `.github/workflows/ci.yml`).
+- Go 1.22+ for local builds; CI pins 1.22.x (see `.github/workflows/ci.yml`).
 - Trunk CLI (install via `trunk init` or let CI download). Holds formatter/linter versions via `.trunk/trunk.yaml`.
 - Git available for hotspot churn analysis (`git diff`, `git log --numstat`). Works on shallow clones but guard missing history.
-- Optional: Docker (builds `trunk-orchestrator:local`), `cosign` for signing.
+- Optional: Docker (builds `punchtrunk:local`), `cosign` for signing.
 
 ## Build & Run Pipeline
 
-- `make build` → `bin/trunk-orchestrator`; equivalent raw command: `CGO_ENABLED=0 go build -o bin/trunk-orchestrator ./cmd/trunk-orchestrator`.
+- `make build` → `bin/punchtrunk`; equivalent raw command: `CGO_ENABLED=0 go build -o bin/punchtrunk ./cmd/punchtrunk`.
 - `make run` executes all modes locally (`fmt,lint,hotspots`) using defaults from `parseFlags`.
-- `make hotspots` matches CI hotspot run. CI invokes `./bin/trunk-orchestrator --mode hotspots --base-branch=origin/<base>`.
-- Docker image: `docker build -t trunk-orchestrator:local .` → distroless runtime at `/app/trunk-orchestrator`, runs as `nonroot`.
+- `make hotspots` matches CI hotspot run. CI invokes `./bin/punchtrunk --mode hotspots --base-branch=origin/<base>`.
+- Docker image: `docker build -t punchtrunk:local .` → distroless runtime at `/app/punchtrunk`, runs as `nonroot`.
 
 ## Flag Surface (from `parseFlags`)
 
@@ -52,7 +53,8 @@
 
 ## Quick Checklist For Handovers
 
-- Ensure `bin/trunk-orchestrator` rebuild with `make build` before committing CLI changes.
-- Run `./bin/trunk-orchestrator --mode fmt,lint` locally so Trunk fixes format before pushing.
+- Ensure `bin/punchtrunk` rebuild with `make build` before committing CLI changes.
+- Run `./bin/punchtrunk --mode fmt,lint` locally so Trunk fixes format before pushing.
 - Confirm `reports/hotspots.sarif` is regenerated and valid JSON (use `jq . reports/hotspots.sarif`).
 - Update `README.md`, `.github/copilot-instructions.md`, and this file when modes, flags, or workflows shift.
+- Review supporting docs under `docs/` (overview, workflows, CI ops, security) to keep guidance current with any dependency upgrades.

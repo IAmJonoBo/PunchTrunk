@@ -1,11 +1,11 @@
 SHELL := /bin/bash
-BIN := bin/trunk-orchestrator
+BIN := bin/punchtrunk
 
 .PHONY: build run fmt lint hotspots docker sign
 
 build:
 	mkdir -p bin
-	CGO_ENABLED=0 go build -o $(BIN) ./cmd/trunk-orchestrator
+	CGO_ENABLED=0 go build -o $(BIN) ./cmd/punchtrunk
 
 run: build
 	$(BIN) --mode fmt,lint,hotspots
@@ -20,8 +20,8 @@ hotspots: build
 	$(BIN) --mode hotspots
 
 docker:
-	docker build -t trunk-orchestrator:local .
+	docker build -t punchtrunk:local .
 
 sign:
-	# Example: cosign sign --keyless trunk-orchestrator:local
+	# Example: cosign sign --keyless punchtrunk:local
 	@echo "Use cosign to sign your image (keyless OIDC supported)."

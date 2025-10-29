@@ -3,7 +3,7 @@ name: CI
 on:
   pull_request:
   push:
-    branches: [ main ]
+    branches: [main]
 
 jobs:
   lint-and-hotspots:
@@ -30,16 +30,16 @@ jobs:
       # Install Go and build the CLI
       - uses: actions/setup-go@v5
         with:
-          go-version: '1.22.x'
+          go-version: "1.22.x"
 
-      - name: Build orchestrator
+      - name: Build PunchTrunk CLI
         run: |
           mkdir -p bin
-          go build -o bin/trunk-orchestrator ./cmd/trunk-orchestrator
+          go build -o bin/punchtrunk ./cmd/punchtrunk
 
-      - name: Run hotspots + (optional) fmt/lint
+      - name: Run PunchTrunk hotspots
         run: |
-          ./bin/trunk-orchestrator --mode hotspots --base-branch=origin/${{ github.event_name == 'pull_request' && github.event.pull_request.base.ref || 'main' }}
+          ./bin/punchtrunk --mode hotspots --base-branch=origin/${{ github.event_name == 'pull_request' && github.event.pull_request.base.ref || 'main' }}
 
       # Upload SARIF to GitHub Code Scanning
       - name: Upload SARIF

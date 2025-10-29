@@ -19,11 +19,12 @@ Restore productivity on short-lived CI or cloud workspaces where caches and git 
 ## Running the Orchestrator
 
 ```bash
-./bin/trunk-orchestrator --mode fmt,lint,hotspots --base-branch=origin/main --timeout=900
+./bin/punchtrunk --mode fmt,lint,hotspots --base-branch=origin/main --timeout=900
 ```
 
 - Build the binary first with `make build` when caches are cold.
 - Increase `--timeout` for large repos or slow network storage.
+- Adjust `--base-branch` for release branches or forks (for example, `origin/release/v1`). Document temporary overrides in the pull request to aid reviewers.
 
 ## Handling Failures
 
@@ -36,6 +37,7 @@ Restore productivity on short-lived CI or cloud workspaces where caches and git 
 - Delete temporary artifacts with `rm -rf bin reports`.
 - Run `trunk clean` to remove stale tool versions.
 - Rebuild and rerun orchestrator to confirm a clean slate.
+- After the incident, capture lessons learned in `docs/CONVENTIONS.md` or open an ADR if processes need structural changes.
 
 ## Escalation
 

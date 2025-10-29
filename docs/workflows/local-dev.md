@@ -4,8 +4,8 @@ _This is a How-to guide in the Diátaxis framework._
 
 ## Prerequisites
 
-- Go 1.20 or later (`go env GOVERSION` should report ≥1.20).
-- Trunk CLI installed (`trunk version`). Run `trunk init` the first time.
+- Go 1.22 or later (`go version` should report ≥1.22; stay current with the latest Go 1.22 patch release to match CI).
+- Trunk CLI installed (`trunk version`). Run `trunk init` the first time or after `trunk upgrade` bumps the pinned toolchain.
 - Git with history for the working branch. For shallow clones fetch depth with `git fetch --deepen=1000` if hotspots need longer history.
 
 ## Bootstrap
@@ -14,15 +14,15 @@ _This is a How-to guide in the Diátaxis framework._
 make build
 ```
 
-- Creates `bin/trunk-orchestrator` using `CGO_ENABLED=0` for static output.
-- Rebuild after flag or dependency changes in `cmd/trunk-orchestrator/main.go`.
+- Creates `bin/punchtrunk` using `CGO_ENABLED=0` for static output.
+- Rebuild after flag or dependency changes in `cmd/punchtrunk/main.go`.
 
 ## Common Tasks
 
 ### Format and Lint
 
 ```bash
-./bin/trunk-orchestrator --mode fmt,lint --autofix=fmt --base-branch=origin/main
+./bin/punchtrunk --mode fmt,lint --autofix=fmt --base-branch=origin/main
 ```
 
 - Runs Trunk formatters, then linters without autofix.
@@ -51,6 +51,12 @@ make run
 - Run `trunk fmt` and `trunk check` directly if you need faster feedback on targeted files.
 - Confirm SARIF diffs before committing to keep `reports/hotspots.sarif` readable.
 - Use `git status` to ensure Trunk autofixes are staged, especially on ephemeral dev environments.
+
+## Updating Tool Versions
+
+- When Go releases a new stable version, update your local install, run `go env GOROOT` to confirm the toolchain, and adjust `go.mod` if language features change.
+- Refresh Trunk plugins with `trunk upgrade --yes`, then commit `.trunk/trunk.yaml` and update `docs/trunk-config.md` to reflect the new versions.
+- After any upgrade, run the full workflow (`make run`) to validate formatter and linter compatibility.
 
 ## Troubleshooting
 

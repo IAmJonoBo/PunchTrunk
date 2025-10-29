@@ -5,7 +5,7 @@ Describe the changes and their motivation.
 ## Testing
 
 - [ ] `make build`
-- [ ] `./bin/trunk-orchestrator --mode fmt,lint`
+- [ ] `./bin/punchtrunk --mode fmt,lint`
 - [ ] `make hotspots`
 - [ ] `trunk check`
 - [ ] Other (specify):

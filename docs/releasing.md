@@ -4,7 +4,7 @@ _This is a How-to guide._
 
 ## Release Goals
 
-Deliver a reproducible `trunk-orchestrator` binary and optional Docker image with minimal manual steps.
+Deliver a reproducible `PunchTrunk` binary and optional Docker image with minimal manual steps.
 
 ## Prerequisites
 
@@ -23,7 +23,7 @@ Deliver a reproducible `trunk-orchestrator` binary and optional Docker image wit
    make build
    ```
 
-   - Verify binary via `./bin/trunk-orchestrator --help`.
+   - Verify binary via `./bin/punchtrunk --help`.
 
 3. **Run Validation**
 
@@ -37,25 +37,40 @@ Deliver a reproducible `trunk-orchestrator` binary and optional Docker image wit
 
    ```bash
    make docker
-   docker run --rm trunk-orchestrator:local --mode hotspots
+   docker run --rm punchtrunk:local --mode hotspots
    ```
 
    - Confirm the image runs as `nonroot`.
 
-5. **Sign Artifacts (optional)**
+5. **Tag the Release**
 
    ```bash
-   cosign sign --keyless trunk-orchestrator:local
+   git tag -a v<major.minor.patch> -m "PunchTrunk <major.minor.patch>"
+   git push origin v<major.minor.patch>
+   ```
+
+   - Update release notes with highlights from commits and note any dependency upgrades (Go, Trunk, plugins).
+
+6. **Sign Artifacts (optional)**
+
+   ```bash
+   cosign sign --keyless punchtrunk:local
    ```
 
    - Record signing digest in the release notes.
 
-6. **Publish**
+7. **Publish**
    - Attach binary and SARIF example to the release entry.
-   - Push Docker image with `docker push <registry>/trunk-orchestrator:<tag>`.
+   - Push Docker image with `docker push <registry>/punchtrunk:<tag>`.
 
 ## Post-Release Checklist
 
 - Update `docs/ROADMAP.md` with shipped items.
 - Announce changes with automation status and known issues.
 - Monitor GitHub Code Scanning uploads for the new release.
+
+## Maintainability
+
+- Validate Go and Trunk versions before tagging. If versions change, sync documentation (`docs/trunk-config.md`, `docs/workflows/local-dev.md`, `docs/security-supply-chain.md`) and open ADRs when appropriate.
+- Run container and binary scans (for example, `trivy image punchtrunk:local`) to confirm dependencies are current.
+- Capture notable release learnings in `docs/ROADMAP.md` or follow-up issues to keep the project adaptable.

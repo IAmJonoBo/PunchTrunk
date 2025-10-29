@@ -1,6 +1,6 @@
 package main
 
-// Trunk Orchestrator: a thin wrapper around `trunk` with hotspot SARIF.
+// PunchTrunk: a thin wrapper around `trunk` with hotspot SARIF.
 // Goals: safe defaults, ephemeral-friendly, no bespoke linter parsing.
 //
 // Notes:
@@ -12,7 +12,6 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
-	"errors"
 	"flag"
 	"fmt"
 	"log"
@@ -22,6 +21,7 @@ import (
 	"path/filepath"
 	"runtime"
 	"sort"
+	"strconv"
 	"strings"
 	"time"
 )
@@ -230,7 +230,7 @@ func gitChangedFiles(ctx context.Context, base string) (map[string]bool, error) 
 	_ = cmd.Run()
 	lines := strings.Split(out.String(), "\n")
 	m := map[string]bool{}
-	for _, l in range lines {
+	for _, l := range lines {
 		l = strings.TrimSpace(l)
 		if l != "" {
 			m[l] = true
@@ -291,42 +291,48 @@ func meanStd(vals []float64) (float64, float64) {
 		return 0, 0
 	}
 	var sum float64
-	for _, v := range vals { sum += v }
+	for _, v := range vals {
+		sum += v
+	}
 	mean := sum / float64(len(vals))
 	var s2 float64
-	for _, v := range vals { s2 += (v-mean)*(v-mean) }
+	for _, v := range vals {
+		s2 += (v - mean) * (v - mean)
+	}
 	std := math.Sqrt(s2 / float64(len(vals)))
 	return mean, std
 }
 
 func mapsValues(m map[string]float64) []float64 {
 	out := make([]float64, 0, len(m))
-	for _, v := range m { out = append(out, v) }
+	for _, v := range m {
+		out = append(out, v)
+	}
 	return out
 }
 
 // SARIF writing (2.1.0 minimal)
 type SarifLog struct {
-	Version   string        `json:"version"`
-	Schema    string        `json:"$schema"`
-	Runs      []SarifRun    `json:"runs"`
+	Version string     `json:"version"`
+	Schema  string     `json:"$schema"`
+	Runs    []SarifRun `json:"runs"`
 }
 type SarifRun struct {
-	Tool SarifTool `json:"tool"`
+	Tool    SarifTool     `json:"tool"`
 	Results []SarifResult `json:"results"`
 }
 type SarifTool struct {
 	Driver SarifDriver `json:"driver"`
 }
 type SarifDriver struct {
-	Name string `json:"name"`
-	Version string `json:"version,omitempty"`
+	Name           string `json:"name"`
+	Version        string `json:"version,omitempty"`
 	InformationURI string `json:"informationUri,omitempty"`
 }
 type SarifResult struct {
-	RuleID string `json:"ruleId"`
-	Level string `json:"level"`
-	Message SarifMessage `json:"message"`
+	RuleID    string          `json:"ruleId"`
+	Level     string          `json:"level"`
+	Message   SarifMessage    `json:"message"`
 	Locations []SarifLocation `json:"locations,omitempty"`
 }
 type SarifMessage struct {
@@ -345,10 +351,10 @@ type SarifArtifactLocation struct {
 func writeSARIF(path string, hs []Hotspot) error {
 	log := SarifLog{
 		Version: "2.1.0",
-		Schema: "https://schemastore.azurewebsites.net/schemas/json/sarif-2.1.0-rtm.5.json",
+		Schema:  "https://schemastore.azurewebsites.net/schemas/json/sarif-2.1.0-rtm.5.json",
 		Runs: []SarifRun{{
 			Tool: SarifTool{Driver: SarifDriver{
-				Name: "trunk-orchestrator",
+				Name:           "PunchTrunk",
 				InformationURI: "https://docs.trunk.io/",
 			}},
 		}},
@@ -356,8 +362,8 @@ func writeSARIF(path string, hs []Hotspot) error {
 	for _, h := range hs {
 		msg := fmt.Sprintf("Hotspot candidate: churn=%d, complexity=%.2f, score=%.2f", h.Churn, h.Complexity, h.Score)
 		log.Runs[0].Results = append(log.Runs[0].Results, SarifResult{
-			RuleID: "hotspot",
-			Level:  "note",
+			RuleID:  "hotspot",
+			Level:   "note",
 			Message: SarifMessage{Text: msg},
 			Locations: []SarifLocation{{
 				PhysicalLocation: SarifPhysicalLocation{

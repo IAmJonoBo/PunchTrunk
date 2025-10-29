@@ -9,7 +9,7 @@ _This is a Reference document within the Diátaxis framework._
 
 ## Runtimes
 
-- Go `1.21.0`
+- Go `1.22.3`
 - Node `22.16.0`
 - Python `3.10.8`
 
@@ -20,7 +20,7 @@ Keep these consistent with project tooling. If you add a runtime, document the c
 - `actionlint@1.7.8`
 - `checkov@3.2.488`
 - `git-diff-check`
-- `gofmt@1.20.4`
+- `gofmt@1.22.3`
 - `golangci-lint2@2.5.0`
 - `hadolint@2.14.0`
 - `markdownlint@0.45.0`
@@ -50,3 +50,10 @@ Update overrides rather than global ignoring so the repository stays hermetic.
 - `trunk-upgrade-available`
 
 Disable an action only after communicating expectations in `docs/CONVENTIONS.md`.
+
+## Maintaining Versions
+
+- Run `trunk upgrade --yes` in a feature branch to pick up new runtime or linter releases; review the diff in `.trunk/trunk.yaml` and `.trunk/configs/` before committing.
+- After upgrades, execute `trunk check --all` and `make run` to ensure the orchestrator still succeeds locally.
+- Update the version lists in this document so incoming contributors know what to expect, and note significant changes in `docs/overview.md` or relevant ADRs.
+- Keep the Go runtime pinned in `.trunk/trunk.yaml` aligned with the minimum Go version declared in `go.mod`; if they diverge temporarily, document the reason in the release notes.

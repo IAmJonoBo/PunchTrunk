@@ -1,4 +1,4 @@
-# ADR 0001: Trunk Orchestrator Core
+# ADR 0001: PunchTrunk Core (formerly Trunk Orchestrator)
 
 ## Status
 
@@ -8,9 +8,11 @@ Accepted
 
 The repository needs a consistent way to run Trunk formatters and linters while publishing hotspot analytics. Teams want lightweight automation that works in ephemeral CI environments.
 
+This decision originally shipped under the name `trunk-orchestrator`; in 2025 it was rebranded to **PunchTrunk** to better reflect its role as the single entrypoint for Trunk orchestration and hotspot scoring.
+
 ## Decision
 
-- Implement a single Go CLI (`cmd/trunk-orchestrator/main.go`) that:
+- Implement a single Go CLI (`cmd/punchtrunk/main.go`) that:
   - Parses execution flags and manages timeouts.
   - Invokes `trunk fmt` and `trunk check` instead of re-implementing lint logic.
   - Computes hotspots using git churn and complexity heuristics.

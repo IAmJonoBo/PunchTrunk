@@ -22,10 +22,10 @@ _This is a How-to guide paired with a Reference summary._
 4. **Setup Go**
    - `actions/setup-go@v5` pins Go `1.22.x` for forward compatibility.
 5. **Build Binary**
-   - `go build -o bin/trunk-orchestrator ./cmd/trunk-orchestrator`.
+   - `go build -o bin/punchtrunk ./cmd/punchtrunk`.
    - Mirrors `make build` to catch compilation errors before runtime.
 6. **Run Hotspots**
-   - Executes `./bin/trunk-orchestrator --mode hotspots --base-branch=origin/<base>`.
+   - Executes `./bin/punchtrunk --mode hotspots --base-branch=origin/<base>`.
    - For pull requests, `<base>` resolves to `github.event.pull_request.base.ref`.
 7. **Upload SARIF**
    - `github/codeql-action/upload-sarif@v3` pushes `reports/hotspots.sarif` to Code Scanning.
@@ -42,3 +42,10 @@ _This is a How-to guide paired with a Reference summary._
 - Check Trunk Action logs first; it surfaces lint failures with inline annotations.
 - If hotspots fail due to missing history, confirm `fetch-depth: 0` or widen the git fetch.
 - SARIF upload errors often indicate invalid JSON; run `jq` locally or re-run hotspots to regenerate.
+
+## Maintenance Tasks
+
+- Review `actions/setup-go` and `trunk-io/trunk-action` versions each quarter; bump them alongside release notes to benefit from security and performance fixes.
+- Rotate cache keys when upgrading linters or runtimes to avoid stale tool downloads (`key: trunk-${{ runner.os }}-${{ hashFiles('.trunk/trunk.yaml') }}`).
+- Keep `fetch-depth: 0` even if workflows change runners—hotspot scoring depends on historical git data.
+- Record workflow changes in `docs/CONVENTIONS.md` and `docs/releasing.md` so contributors know how CI is configured.

@@ -4,7 +4,7 @@ Thanks for helping improve PunchTrunk. This guide follows Google developer docum
 
 ## Before You Start
 
-- Install Go 1.20+ and Trunk CLI.
+- Install Go 1.22+ and Trunk CLI.
 - Run `trunk init` once per clone to download the pinned toolchain.
 - Familiarize yourself with `docs/overview.md` and `docs/workflows/local-dev.md`.
 
@@ -27,7 +27,7 @@ Thanks for helping improve PunchTrunk. This guide follows Google developer docum
 3. **Run fmt + lint**
 
    ```bash
-   ./bin/trunk-orchestrator --mode fmt,lint --autofix=fmt --base-branch=origin/main
+   ./bin/punchtrunk --mode fmt,lint --autofix=fmt --base-branch=origin/main
    ```
 
 4. **Hotspots (optional but recommended)**

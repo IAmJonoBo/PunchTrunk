@@ -2,7 +2,7 @@
 
 ## Architecture
 
-- CLI entrypoint `cmd/trunk-orchestrator/main.go` orchestrates `trunk fmt`, `trunk check`, and hotspot scoring; keep logic self-contained and side-effect free.
+- CLI entrypoint `cmd/punchtrunk/main.go` orchestrates `trunk fmt`, `trunk check`, and hotspot scoring; keep logic self-contained and side-effect free.
 - `computeHotspots` shells out to git (`git diff`, `git log --numstat`) and parses repo files for complexity; changes must preserve compatibility with shallow clones by guarding errors.
 - SARIF emission happens via `writeSARIF`; results land in `reports/hotspots.sarif` and encode file-level `note` severities.
 - Global `exitErr` carries the first `trunk check` failure so CI exits non-zero even if other modes succeed; do not reset it unless intentionally modifying exit policy.
@@ -10,11 +10,11 @@
 
 ## Workflows
 
-- Local build: `go build -o bin/trunk-orchestrator ./cmd/trunk-orchestrator` (or `make build`); Go 1.20+ per `go.mod`, CI uses 1.22 for forward compatibility.
-- Common runs: `./bin/trunk-orchestrator --mode fmt,lint,hotspots --base-branch=origin/main`; for hotspots-only CI parity use `make hotspots`.
+- Local build: `go build -o bin/punchtrunk ./cmd/punchtrunk` (or `make build`); Go 1.22+ per `go.mod`, CI stays on the latest 1.22 patch.
+- Common runs: `./bin/punchtrunk --mode fmt,lint,hotspots --base-branch=origin/main`; for hotspots-only CI parity use `make hotspots`.
 - Trunk toolchain is configured in `.trunk/trunk.yaml`; `trunk fmt` hits formatters only, `trunk check` drives linters with hold-the-line defaults.
 - CI workflow `.github/workflows/ci.yml` checks out with `fetch-depth: 0`, caches Trunk, builds the binary, runs hotspots against the PR base, then uploads SARIF.
-- Docker image builds via `docker build -t trunk-orchestrator:local .`, producing a distroless runtime binary at `/app/trunk-orchestrator`.
+- Docker image builds via `docker build -t punchtrunk:local .`, producing a distroless runtime binary at `/app/punchtrunk`.
 
 ## Conventions
 

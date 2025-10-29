@@ -4,7 +4,7 @@ _This is a How-to and Reference hybrid._
 
 ## Current Coverage
 
-- There are no Go unit tests yet; logic lives in `cmd/trunk-orchestrator/main.go`.
+- There are no Go unit tests yet; logic lives in `cmd/punchtrunk/main.go`.
 - Hotspot functions (`computeHotspots`, `gitChurn`, `roughComplexity`) are candidates for extracted packages if tests are added.
 
 ## Goals
@@ -31,3 +31,4 @@ _This is a How-to and Reference hybrid._
 - Provide sample repositories for smoke-testing against different languages.
 - Add golden SARIF fixtures to guard against schema regressions.
 - Document testing playbooks in `docs/runbooks/ephemeral-runners.md` once automated coverage improves.
+- Introduce automated coverage reporting in CI when tests land, and record the process in `docs/operations/ci.md`.

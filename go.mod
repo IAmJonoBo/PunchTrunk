@@ -1,3 +1,3 @@
-module example.com/trunk-orchestrator
+module github.com/IAmJonoBo/PunchTrunk
 
-go 1.20
+go 1.22

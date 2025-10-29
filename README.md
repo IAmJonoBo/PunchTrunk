@@ -1,4 +1,4 @@
-# Trunk Orchestrator (polyglot, ephemeral-friendly)
+# PunchTrunk (polyglot, ephemeral-friendly)
 
 A lightweight CLI + CI setup that:
 
@@ -10,25 +10,32 @@ A lightweight CLI + CI setup that:
 - Works out-of-the-box on **ephemeral runners** with caching
 
 > Status: starter kit. Designed to be hermetic, fast, and agent-friendly.
+> Rebranding note: formerly `trunk-orchestrator`, now published as **PunchTrunk** to reflect the broader workflow focus.
 
 ---
 
 ## Quick start
 
 1. **Install Trunk CLI** locally (or let CI do it):
-   - Docs: https://docs.trunk.io/code-quality/setup-and-installation/initialize-trunk
+   - [Installation guide](https://docs.trunk.io/code-quality/setup-and-installation/initialize-trunk)
 2. **Initialise** Trunk in your repo (first time only):
+
    ```bash
    trunk init
    ```
+
 3. **Run the orchestrator** (local dev):
+
    ```bash
-   go run ./cmd/trunk-orchestrator --mode fmt,lint --autofix=fmt --base-branch=origin/main
+   go run ./cmd/punchtrunk --mode fmt,lint --autofix=fmt --base-branch=origin/main
    ```
+
    Or after building:
+
    ```bash
-   ./bin/trunk-orchestrator --mode fmt,lint --autofix=fmt --base-branch=origin/main
+   ./bin/punchtrunk --mode fmt,lint --autofix=fmt --base-branch=origin/main
    ```
+
 4. **CI on GitHub Actions**:
    - Copy `.github/workflows/ci.yml` to your repo.
    - On PRs, you’ll get inline annotations from Trunk Action.
@@ -48,7 +55,7 @@ A lightweight CLI + CI setup that:
 
 ## Requirements
 
-- Go 1.20+ to build the CLI
+- Go 1.22+ to build the CLI
 - Trunk CLI available in PATH on dev machines; CI job installs & caches it
 - Git available (the hotspot analysis shells out to git)
 
@@ -57,7 +64,7 @@ A lightweight CLI + CI setup that:
 ## CLI usage
 
 ```text
-trunk-orchestrator [flags]
+PunchTrunk [flags]
 
 Flags:
   --mode=fmt,lint,hotspots   Which phases to run (default: fmt,lint,hotspots)
@@ -69,17 +76,17 @@ Flags:
   --verbose                  Extra logs
 ```
 
-**Examples**
+### Examples
 
 ```bash
 # Fast pre-commit run on changed files
-./bin/trunk-orchestrator --mode fmt,lint
+./bin/punchtrunk --mode fmt,lint
 
 # Weekly deep clean (full scan)
-./bin/trunk-orchestrator --mode fmt,lint,hotspots --timeout=3600
+./bin/punchtrunk --mode fmt,lint,hotspots --timeout=3600
 
 # Strict CI (no autofix)
-./bin/trunk-orchestrator --mode lint,hotspots --autofix=none --base-branch=origin/main
+./bin/punchtrunk --mode lint,hotspots --autofix=none --base-branch=origin/main
 ```
 
 ---
@@ -104,8 +111,8 @@ The orchestrator honours `.trunk/trunk.yaml`. This repo includes a minimal seed 
 
 Docs:
 
-- Hold-the-line & base branch: https://docs.trunk.io/code-quality/setup-and-installation/prevent-new-issues
-- `trunk check` / `trunk fmt`: https://docs.trunk.io/code-quality/linters/run-linters
+- [Hold-the-line & base branch](https://docs.trunk.io/code-quality/setup-and-installation/prevent-new-issues)
+- [`trunk check` / `trunk fmt`](https://docs.trunk.io/code-quality/linters/run-linters)
 
 ---
 
@@ -128,10 +135,10 @@ This is a heuristic to prioritise attention, inspired by defect prediction liter
 
 References:
 
-- Distroless images: https://github.com/GoogleContainerTools/distroless
-- Docker doc on distroless: https://docs.docker.com/dhi/core-concepts/distroless/
-- Cosign: https://github.com/sigstore/cosign
-- GitHub SARIF upload: https://docs.github.com/en/code-security/code-scanning/integrating-with-code-scanning/uploading-a-sarif-file-to-github
+- [Distroless images](https://github.com/GoogleContainerTools/distroless)
+- [Docker doc on distroless](https://docs.docker.com/dhi/core-concepts/distroless/)
+- [Cosign](https://github.com/sigstore/cosign)
+- [GitHub SARIF upload](https://docs.github.com/en/code-security/code-scanning/integrating-with-code-scanning/uploading-a-sarif-file-to-github)
 
 ---
 
