@@ -54,13 +54,24 @@ jobs:
       - name: Run tests
         run: go test -v ./...
 
+      - name: Extract version
+        id: version
+        run: |
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+            VERSION="${{ github.event.inputs.tag }}"
+          else
+            VERSION="${GITHUB_REF#refs/tags/}"
+          fi
+          echo "version=${VERSION}" >> $GITHUB_OUTPUT
+
       - name: Build binary
         env:
           GOOS: ${{ matrix.goos }}
           GOARCH: ${{ matrix.goarch }}
           CGO_ENABLED: 0
         run: |
-          go build -ldflags="-s -w" -o dist/${{ matrix.name }} ./cmd/punchtrunk
+          go build -ldflags="-s -w -X main.Version=${{ steps.version.outputs.version }}" \
+            -o dist/${{ matrix.name }} ./cmd/punchtrunk
           
       - name: Generate checksums
         run: |

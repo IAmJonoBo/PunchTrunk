@@ -26,6 +26,9 @@ import (
 	"time"
 )
 
+// Version is set at build time via -ldflags
+var Version = "dev"
+
 type Config struct {
 	Modes      []string
 	Autofix    string
@@ -34,10 +37,17 @@ type Config struct {
 	Timeout    time.Duration
 	SarifOut   string
 	Verbose    bool
+	ShowVersion bool
 }
 
 func main() {
 	cfg := parseFlags()
+	
+	if cfg.ShowVersion {
+		fmt.Printf("PunchTrunk version %s\n", Version)
+		os.Exit(0)
+	}
+	
 	if cfg.MaxProcs <= 0 {
 		cfg.MaxProcs = runtime.NumCPU()
 	}
@@ -102,6 +112,7 @@ func parseFlags() *Config {
 	var sarifOut string
 	var verbose bool
 	var autofix string
+	var version bool
 	flag.StringVar(&modes, "mode", "fmt,lint,hotspots", "Comma-separated phases: fmt,lint,hotspots")
 	flag.StringVar(&autofix, "autofix", "fmt", "Autofix scope: none|fmt|lint|all")
 	flag.StringVar(&base, "base-branch", "origin/main", "Base branch for change detection")
@@ -109,15 +120,17 @@ func parseFlags() *Config {
 	flag.IntVar(&timeoutSec, "timeout", 900, "Overall timeout in seconds")
 	flag.StringVar(&sarifOut, "sarif-out", "reports/hotspots.sarif", "SARIF output path for hotspots")
 	flag.BoolVar(&verbose, "verbose", false, "Verbose logs")
+	flag.BoolVar(&version, "version", false, "Show version and exit")
 	flag.Parse()
 	return &Config{
-		Modes:      splitCSV(modes),
-		Autofix:    strings.ToLower(autofix),
-		BaseBranch: base,
-		MaxProcs:   maxProcs,
-		Timeout:    time.Duration(timeoutSec) * time.Second,
-		SarifOut:   sarifOut,
-		Verbose:    verbose,
+		Modes:       splitCSV(modes),
+		Autofix:     strings.ToLower(autofix),
+		BaseBranch:  base,
+		MaxProcs:    maxProcs,
+		Timeout:     time.Duration(timeoutSec) * time.Second,
+		SarifOut:    sarifOut,
+		Verbose:     verbose,
+		ShowVersion: version,
 	}
 }
 
