@@ -9,8 +9,8 @@ PunchTrunk bundles Trunk CLI operations and hotspot analysis inside a single Go 
 
 ## Architecture at a Glance
 
-- `cmd/punchtrunk/main.go` parses flags, builds a timeout-scoped context, and runs Trunk commands (`trunk fmt`, `trunk check`).
-- Hotspot scoring combines git churn data with a token density heuristic before writing SARIF (`reports/hotspots.sarif`).
+- `cmd/punchtrunk/main.go` parses flags, builds a timeout-scoped context, and runs Trunk commands (`trunk fmt`, `trunk check`). It now bootstraps prerequisites via `ensureEnvironment`, auto-installing the Trunk CLI into `~/.trunk/bin` (or `%USERPROFILE%\.trunk\bin`) when it is missing, normalising `--trunk-config-dir`, validating user-supplied binaries from `--trunk-binary`/`PUNCHTRUNK_TRUNK_BINARY`, and failing fast when `PUNCHTRUNK_AIRGAPPED=1` disallows downloads. Detected overlaps with other formatter/linter configs trigger informational guidance so operators can scope PunchTrunk with `--trunk-arg` filters when needed.
+- Hotspot scoring combines git churn data with a token density heuristic before writing SARIF (`reports/hotspots.sarif`); on read-only workspaces the CLI redirects output to `/tmp/punchtrunk/reports/<filename>` and logs the new location for upload steps.
 - CI (`.github/workflows/ci.yml`) restores cached Trunk tools, builds the binary, runs hotspots, and uploads SARIF.
 - Trunk configuration lives in `.trunk/trunk.yaml` with overrides under `.trunk/configs/` to keep dependencies pinned.
 
@@ -23,7 +23,7 @@ PunchTrunk bundles Trunk CLI operations and hotspot analysis inside a single Go 
 ## Key Design Principles
 
 - **Hermetic tooling**: all linting goes through Trunk to avoid ad-hoc installations.
-- **Graceful degradation**: hotspot logic tolerates shallow clones and missing history.
+- **Graceful degradation**: hotspot logic tolerates shallow clones and missing history by retrying git queries with progressively shorter history windows and falling back to empty datasets when no commits exist.
 - **Safe defaults**: formatters autofix by default; linters are warn-only unless `--autofix` expands scope.
 - **Separation of concerns**: CLI orchestrates workflow steps; Trunk config expresses tool choices.
 

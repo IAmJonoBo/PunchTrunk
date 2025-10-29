@@ -22,11 +22,13 @@ This guide covers integrating PunchTrunk into CI/CD pipelines, ephemeral runners
 ### Installation
 
 **Binary Installation:**
+
 ```bash
 curl -fsSL https://raw.githubusercontent.com/IAmJonoBo/PunchTrunk/main/scripts/install.sh | bash
 ```
 
 **Container Usage:**
+
 ```bash
 docker pull ghcr.io/iamjonobo/punchtrunk:latest
 ```
@@ -68,14 +70,14 @@ jobs:
     timeout-minutes: 20
     permissions:
       contents: read
-      security-events: write  # For SARIF upload
-      
+      security-events: write # For SARIF upload
+
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
         with:
-          fetch-depth: 0  # Required for hotspot analysis
-          
+          fetch-depth: 0 # Required for hotspot analysis
+
       # Cache Trunk tools for faster runs
       - name: Cache Trunk
         uses: actions/cache@v4
@@ -84,32 +86,32 @@ jobs:
           key: trunk-${{ runner.os }}-${{ hashFiles('.trunk/trunk.yaml') }}
           restore-keys: |
             trunk-${{ runner.os }}-
-            
+
       # Install Trunk CLI
       - name: Install Trunk
         run: |
           curl https://get.trunk.io -fsSL | bash -s -- -y
           echo "${HOME}/.trunk/bin" >> $GITHUB_PATH
-          
+
       # Install PunchTrunk
       - name: Install PunchTrunk
         run: |
           curl -fsSL https://raw.githubusercontent.com/IAmJonoBo/PunchTrunk/main/scripts/install.sh | bash
-          
+
       # Run PunchTrunk
       - name: Run PunchTrunk
         run: |
           punchtrunk --mode fmt,lint,hotspots \
             --base-branch=origin/${{ github.event_name == 'pull_request' && github.event.pull_request.base.ref || 'main' }} \
             --verbose
-        continue-on-error: true  # Don't fail on lint issues
-        
+        continue-on-error: true # Don't fail on lint issues
+
       # Upload SARIF to GitHub Code Scanning
       - name: Upload SARIF
         uses: github/codeql-action/upload-sarif@v3
         with:
           sarif_file: reports/hotspots.sarif
-          
+
       # Optional: Upload artifacts for debugging
       - name: Upload reports
         if: always()
@@ -128,13 +130,13 @@ jobs:
     runs-on: ubuntu-latest
     container:
       image: ghcr.io/iamjonobo/punchtrunk:latest
-      
+
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
         with:
           fetch-depth: 0
-          
+
       - name: Run PunchTrunk
         run: |
           /app/punchtrunk --mode hotspots --base-branch=HEAD~10
@@ -150,13 +152,13 @@ jobs:
       - uses: actions/checkout@v4
         with:
           fetch-depth: 0
-          
+
       - name: Run PunchTrunk Hotspots
         run: |
           docker run --rm -v $(pwd):/workspace -w /workspace \
             ghcr.io/iamjonobo/punchtrunk:latest \
             --mode hotspots
-            
+
       - name: Upload SARIF
         uses: github/codeql-action/upload-sarif@v3
         with:
@@ -180,7 +182,7 @@ variables:
 .punchtrunk-base:
   image: ghcr.io/iamjonobo/punchtrunk:${PUNCHTRUNK_VERSION}
   before_script:
-    - git fetch --unshallow || true  # Ensure full history
+    - git fetch --unshallow || true # Ensure full history
 
 quality:fmt-lint:
   extends: .punchtrunk-base
@@ -272,12 +274,12 @@ pipeline {
             args '-v $WORKSPACE:/workspace -w /workspace'
         }
     }
-    
+
     environment {
         PUNCHTRUNK_MODE = 'fmt,lint,hotspots'
         BASE_BRANCH = 'origin/main'
     }
-    
+
     stages {
         stage('Setup') {
             steps {
@@ -285,17 +287,17 @@ pipeline {
                 sh 'git fetch --unshallow || true'
             }
         }
-        
+
         stage('Quality Check') {
             steps {
                 sh '/app/punchtrunk --mode ${PUNCHTRUNK_MODE} --base-branch=${BASE_BRANCH} --verbose'
             }
         }
-        
+
         stage('Archive Results') {
             steps {
                 archiveArtifacts artifacts: 'reports/**/*', allowEmptyArchive: true
-                
+
                 // Optional: Publish SARIF to security tools
                 publishWarnings(
                     parserConfigurations: [[
@@ -306,7 +308,7 @@ pipeline {
             }
         }
     }
-    
+
     post {
         always {
             cleanWs()
@@ -318,22 +320,24 @@ pipeline {
 ## Ephemeral Runners
 
 PunchTrunk is optimized for ephemeral runners with:
+
 - Fast cold starts (< 1 minute with caching)
 - Minimal dependencies (single binary or container)
 - Effective caching strategies
 - Graceful degradation on shallow clones
+- Explicit offline controls (`PUNCHTRUNK_AIRGAPPED=1` to skip installer downloads, `--trunk-binary` or `PUNCHTRUNK_TRUNK_BINARY` to point at a pre-baked CLI)
 
 ### GitHub Actions with Ephemeral Runners
 
 ```yaml
 jobs:
   quality:
-    runs-on: self-hosted-ephemeral  # Your ephemeral runner label
+    runs-on: self-hosted-ephemeral # Your ephemeral runner label
     steps:
       - uses: actions/checkout@v4
         with:
-          fetch-depth: 0  # Critical for hotspot analysis
-          
+          fetch-depth: 0 # Critical for hotspot analysis
+
       # Cache restoration is automatic with actions/cache
       - uses: actions/cache@v4
         with:
@@ -341,13 +345,13 @@ jobs:
             ~/.cache/trunk
             /usr/local/bin/punchtrunk
           key: punchtrunk-${{ runner.os }}-${{ hashFiles('.trunk/trunk.yaml') }}
-          
+
       - name: Install or use cached PunchTrunk
         run: |
           if ! command -v punchtrunk &> /dev/null; then
             curl -fsSL https://raw.githubusercontent.com/IAmJonoBo/PunchTrunk/main/scripts/install.sh | bash
           fi
-          
+
       - name: Run PunchTrunk
         run: punchtrunk --mode fmt,lint,hotspots
 ```
@@ -362,30 +366,30 @@ metadata:
 spec:
   restartPolicy: Never
   containers:
-  - name: punchtrunk
-    image: ghcr.io/iamjonobo/punchtrunk:latest
-    command: ["/app/punchtrunk"]
-    args: ["--mode", "hotspots", "--base-branch", "origin/main"]
-    volumeMounts:
-    - name: workspace
-      mountPath: /workspace
-    workingDir: /workspace
+    - name: punchtrunk
+      image: ghcr.io/iamjonobo/punchtrunk:latest
+      command: ["/app/punchtrunk"]
+      args: ["--mode", "hotspots", "--base-branch", "origin/main"]
+      volumeMounts:
+        - name: workspace
+          mountPath: /workspace
+      workingDir: /workspace
   volumes:
-  - name: workspace
-    emptyDir: {}
-  initContainers:
-  - name: git-clone
-    image: alpine/git:latest
-    command:
-    - sh
-    - -c
-    - |
-      git clone --depth 100 ${GIT_REPO} /workspace
-      cd /workspace
-      git checkout ${GIT_COMMIT}
-    volumeMounts:
     - name: workspace
-      mountPath: /workspace
+      emptyDir: {}
+  initContainers:
+    - name: git-clone
+      image: alpine/git:latest
+      command:
+        - sh
+        - -c
+        - |
+          git clone --depth 100 ${GIT_REPO} /workspace
+          cd /workspace
+          git checkout ${GIT_COMMIT}
+      volumeMounts:
+        - name: workspace
+          mountPath: /workspace
 ```
 
 ## Container-Based Workflows
@@ -394,7 +398,7 @@ spec:
 
 ```yaml
 # docker-compose.yml
-version: '3.8'
+version: "3.8"
 
 services:
   punchtrunk:
@@ -406,6 +410,7 @@ services:
 ```
 
 Usage:
+
 ```bash
 docker-compose run --rm punchtrunk
 ```
@@ -461,7 +466,7 @@ repos:
         entry: punchtrunk --mode fmt
         language: system
         pass_filenames: false
-        
+
       - id: punchtrunk-lint
         name: PunchTrunk Lint
         entry: punchtrunk --mode lint --autofix=none
@@ -474,10 +479,11 @@ repos:
 ### 1. Git History Depth
 
 **Always fetch full history for hotspots:**
+
 ```yaml
 - uses: actions/checkout@v4
   with:
-    fetch-depth: 0  # Not fetch-depth: 1
+    fetch-depth: 0 # Not fetch-depth: 1
 ```
 
 **Why:** Hotspot analysis requires git history to compute churn. Shallow clones will produce incomplete results.
@@ -485,18 +491,21 @@ repos:
 ### 2. Caching Strategy
 
 **Cache these directories:**
+
 ```yaml
 ~/.cache/trunk       # Trunk tool cache
 /usr/local/bin/punchtrunk  # Binary cache (if installed)
 ```
 
 **Expected speedup:**
+
 - First run: ~5-10 minutes (tool downloads)
 - Cached run: ~1-2 minutes
 
 ### 3. Timeout Configuration
 
 **Recommended timeouts:**
+
 - Small repos (< 100 files): 10 minutes
 - Medium repos (100-1000 files): 20 minutes
 - Large repos (> 1000 files): 30 minutes
@@ -510,6 +519,7 @@ jobs:
 ### 4. Error Handling
 
 **Don't fail the pipeline on lint issues:**
+
 ```yaml
 - name: Run PunchTrunk
   run: punchtrunk --mode lint
@@ -517,6 +527,7 @@ jobs:
 ```
 
 **Do fail on critical errors:**
+
 ```yaml
 - name: Run PunchTrunk
   run: |
@@ -529,11 +540,13 @@ jobs:
 ### 5. Base Branch Configuration
 
 **For PRs:**
+
 ```bash
 punchtrunk --mode hotspots --base-branch=origin/${BASE_BRANCH}
 ```
 
 **For main branch:**
+
 ```bash
 punchtrunk --mode hotspots --base-branch=HEAD~10
 ```
@@ -541,6 +554,7 @@ punchtrunk --mode hotspots --base-branch=HEAD~10
 ### 6. Resource Limits
 
 **Container resource limits:**
+
 ```yaml
 resources:
   limits:
@@ -549,6 +563,7 @@ resources:
 ```
 
 **Expected resource usage:**
+
 - Memory: < 500 MB for most repos
 - CPU: Scales with file count
 - Disk: < 100 MB (plus repo size)
@@ -560,6 +575,7 @@ resources:
 **Cause:** Shallow clone or no git history
 
 **Solution:**
+
 ```yaml
 - uses: actions/checkout@v4
   with:
@@ -571,9 +587,22 @@ resources:
 **Cause:** Trunk CLI not installed
 
 **Solution:**
+
 ```bash
 curl https://get.trunk.io -fsSL | bash -s -- -y
 echo "${HOME}/.trunk/bin" >> $GITHUB_PATH
+```
+
+### Issue: "Outbound network blocked"
+
+**Cause:** Runners cannot reach <https://get.trunk.io>
+
+**Solution:**
+
+```bash
+# Pre-install Trunk and skip downloads
+export PUNCHTRUNK_AIRGAPPED=1
+punchtrunk --mode lint --trunk-binary=/opt/trunk/bin/trunk
 ```
 
 ### Issue: "Slow CI runs"
@@ -581,6 +610,7 @@ echo "${HOME}/.trunk/bin" >> $GITHUB_PATH
 **Cause:** No caching, cold starts
 
 **Solution:**
+
 ```yaml
 - uses: actions/cache@v4
   with:
@@ -593,6 +623,7 @@ echo "${HOME}/.trunk/bin" >> $GITHUB_PATH
 **Cause:** Container runs as nonroot, volume permissions
 
 **Solution:**
+
 ```bash
 # Option 1: Run as current user
 docker run --rm --user $(id -u):$(id -g) -v $(pwd):/workspace ...
@@ -606,12 +637,15 @@ docker run --rm -v $(pwd):/workspace ... sh -c "chown -R nonroot:nonroot /worksp
 **Cause:** Invalid SARIF format or permissions
 
 **Solution:**
+
 ```bash
 # Validate SARIF
 jq empty reports/hotspots.sarif
 
 # Check permissions
 # Ensure security-events: write in workflow
+# Check fallback path
+ls -R /tmp/punchtrunk/reports  # PunchTrunk logs when it redirects output
 ```
 
 ## Next Steps

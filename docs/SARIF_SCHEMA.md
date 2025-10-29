@@ -10,7 +10,7 @@ PunchTrunk outputs **SARIF 2.1.0** format, conforming to the [OASIS SARIF 2.1.0 
 
 ## Schema Location
 
-```
+```text
 https://schemastore.azurewebsites.net/schemas/json/sarif-2.1.0-rtm.5.json
 ```
 
@@ -19,11 +19,21 @@ https://schemastore.azurewebsites.net/schemas/json/sarif-2.1.0-rtm.5.json
 ### File Location
 
 By default, SARIF files are written to:
-```
+
+```text
 reports/hotspots.sarif
 ```
 
+If the checkout is read-only, PunchTrunk automatically redirects output to:
+
+```text
+/tmp/punchtrunk/reports/<filename>
+```
+
+The CLI emits a log entry with the exact fallback path so CI upload steps can adjust.
+
 This can be customized with the `--sarif-out` flag:
+
 ```bash
 ./bin/punchtrunk --mode hotspots --sarif-out custom/path/output.sarif
 ```
@@ -74,17 +84,20 @@ Each hotspot is represented as a SARIF result:
 ### Field Descriptions
 
 #### ruleId
+
 - **Value**: `"hotspot"`
 - **Type**: Fixed identifier for all hotspot results
 - **Purpose**: Groups all hotspot findings under a single rule
 
 #### level
+
 - **Value**: `"note"`
 - **Type**: Severity level
 - **Rationale**: Hotspots are informational, not bugs or vulnerabilities
 - **Options**: `"error"`, `"warning"`, `"note"`, `"none"`
 
 #### message.text
+
 - **Format**: `"Hotspot candidate: churn={int}, complexity={float}, score={float}"`
 - **Components**:
   - `churn`: Number of lines added/modified in the last 90 days
@@ -93,6 +106,7 @@ Each hotspot is represented as a SARIF result:
 - **Example**: `"Hotspot candidate: churn=42, complexity=3.14, score=7.89"`
 
 #### locations[0].physicalLocation.artifactLocation.uri
+
 - **Format**: Relative file path from repository root
 - **Path Separator**: Forward slash (`/`) for cross-platform compatibility
 - **Example**: `"cmd/punchtrunk/main.go"`
@@ -108,11 +122,12 @@ Results are ordered by **descending score**, with the highest-scoring (riskiest)
 
 ### Score Formula
 
-```
+```text
 score = log(1 + churn) × (1 + complexity_z)
 ```
 
 Where:
+
 - `churn`: Total lines changed in the analysis window
 - `complexity_z`: Z-score normalized complexity across all files
 - Changed files: Multiplied by 1.15
@@ -131,6 +146,7 @@ Upload SARIF to GitHub Code Scanning using the CodeQL action:
 ```
 
 Results appear in:
+
 - Repository **Security** tab → **Code scanning**
 - Pull request annotations (if configured)
 
@@ -166,7 +182,7 @@ jq '.runs[0].results[:10] | .[] | {
 Example: Filter by score threshold:
 
 ```bash
-jq '.runs[0].results[] | select(.message.text | contains("score=") | 
+jq '.runs[0].results[] | select(.message.text | contains("score=") |
   split("score=")[1] | split(")")[0] | tonumber > 5.0)' reports/hotspots.sarif
 ```
 
@@ -257,11 +273,13 @@ if len(hs) > 1000 {
 **Problem**: No results in SARIF output
 
 **Causes**:
+
 1. No git history (shallow clone without `fetch-depth: 0`)
 2. No file changes in the analysis window
 3. All files excluded by gitignore
 
 **Solution**:
+
 ```bash
 # Check git history depth
 git log --oneline | wc -l  # Should be > 1
@@ -278,6 +296,7 @@ git log --since="90 days ago" --numstat
 **Problem**: GitHub Code Scanning rejects SARIF
 
 **Solution**:
+
 ```bash
 # Validate JSON syntax
 jq empty reports/hotspots.sarif || echo "Invalid JSON"
@@ -295,6 +314,7 @@ jq '{
 **Problem**: File paths not recognized by GitHub
 
 **Causes**:
+
 1. Absolute paths instead of relative
 2. Wrong path separator (backslash on Windows)
 
@@ -312,14 +332,17 @@ jq -r '.runs[0].results[].locations[0].physicalLocation.artifactLocation.uri' \
 ## References
 
 ### Specifications
+
 - [SARIF 2.1.0 Specification](https://docs.oasis-open.org/sarif/sarif/v2.1.0/sarif-v2.1.0.html)
 - [SARIF Tutorials](https://github.com/microsoft/sarif-tutorials)
 
 ### GitHub Integration
+
 - [Code Scanning SARIF Support](https://docs.github.com/en/code-security/code-scanning/integrating-with-code-scanning/sarif-support-for-code-scanning)
 - [Uploading SARIF Files](https://docs.github.com/en/code-security/code-scanning/integrating-with-code-scanning/uploading-a-sarif-file-to-github)
 
 ### Tools
+
 - [SARIF Viewer (VS Code)](https://marketplace.visualstudio.com/items?itemName=MS-SarifVSCode.sarif-viewer)
 - [SARIF Web Validator](https://sarifweb.azurewebsites.net/)
 - [jq Manual](https://stedolan.github.io/jq/manual/)
@@ -327,6 +350,7 @@ jq -r '.runs[0].results[].locations[0].physicalLocation.artifactLocation.uri' \
 ## Changelog
 
 ### Current Version
+
 - SARIF 2.1.0 compliant
 - File-level hotspot results
 - Note severity level
@@ -334,7 +358,9 @@ jq -r '.runs[0].results[].locations[0].physicalLocation.artifactLocation.uri' \
 - 90-day churn window
 
 ### Future Enhancements
+
 See [ROADMAP.md](ROADMAP.md):
+
 - Custom churn windows
 - CODEOWNERS integration
 - Additional metadata fields

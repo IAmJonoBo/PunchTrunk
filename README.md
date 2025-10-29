@@ -15,7 +15,6 @@ A lightweight CLI + CI setup that:
 
 ---
 
-
 ## Installation
 
 ### Quick Install (Recommended)
@@ -31,6 +30,7 @@ This installs the latest release to `/usr/local/bin/punchtrunk`.
 Download pre-built binaries from [GitHub Releases](https://github.com/IAmJonoBo/PunchTrunk/releases):
 
 **Linux (AMD64):**
+
 ```bash
 curl -L https://github.com/IAmJonoBo/PunchTrunk/releases/latest/download/punchtrunk-linux-amd64 -o punchtrunk
 chmod +x punchtrunk
@@ -38,6 +38,7 @@ sudo mv punchtrunk /usr/local/bin/
 ```
 
 **macOS (ARM64 - M1/M2):**
+
 ```bash
 curl -L https://github.com/IAmJonoBo/PunchTrunk/releases/latest/download/punchtrunk-darwin-arm64 -o punchtrunk
 chmod +x punchtrunk
@@ -45,6 +46,7 @@ sudo mv punchtrunk /usr/local/bin/
 ```
 
 **Windows (AMD64):**
+
 ```powershell
 # Download from: https://github.com/IAmJonoBo/PunchTrunk/releases/latest/download/punchtrunk-windows-amd64.exe
 # Add to PATH
@@ -62,6 +64,7 @@ docker run --rm -v $(pwd):/workspace -w /workspace \
 ```
 
 Container images are signed with [cosign](https://github.com/sigstore/cosign):
+
 ```bash
 cosign verify \
   --certificate-identity-regexp="^https://github.com/IAmJonoBo/PunchTrunk.*" \
@@ -79,13 +82,13 @@ sudo mv bin/punchtrunk /usr/local/bin/
 ```
 
 ---
+
 ## Quick start
 
 1. **Install PunchTrunk** (see [Installation](#installation) above)
 
-2. **Install Trunk CLI** (or let CI do it):
+2. **Install Trunk CLI** (optional – PunchTrunk auto-installs if missing):
    - [Installation guide](https://docs.trunk.io/code-quality/setup-and-installation/initialize-trunk)
-   
 3. **Initialise** Trunk in your repo (first time only):
 
    ```bash
@@ -128,13 +131,16 @@ sudo mv bin/punchtrunk /usr/local/bin/
 PunchTrunk [flags]
 
 Flags:
-  --mode=fmt,lint,hotspots   Which phases to run (default: fmt,lint,hotspots)
-  --autofix=none|fmt|lint|all  Which fixes to apply (default: fmt)
-  --base-branch=<git ref>    Base for change detection (default: origin/main)
-  --max-procs=<n>            Parallelism cap (default: logical CPUs)
-  --timeout=<seconds>        Overall wall-clock budget (default: 900)
-  --sarif-out=reports/hotspots.sarif  Where to write hotspot SARIF
-  --verbose                  Extra logs
+   --mode=fmt,lint,hotspots   Which phases to run (default: fmt,lint,hotspots)
+   --autofix=none|fmt|lint|all  Which fixes to apply (default: fmt)
+   --base-branch=<git ref>    Base for change detection (default: origin/main)
+   --max-procs=<n>            Parallelism cap (default: logical CPUs)
+   --timeout=<seconds>        Overall wall-clock budget (default: 900)
+   --sarif-out=reports/hotspots.sarif  Where to write hotspot SARIF (falls back to /tmp/punchtrunk/reports when workspace is read-only)
+   --verbose                  Extra logs
+   --trunk-config-dir=<dir>   Use an alternate Trunk config directory when reusing an existing setup
+   --trunk-binary=<path>      Explicit trunk binary to run (air-gapped/offline runners)
+   --trunk-arg=<value>        Additional argument forwarded to `trunk` (repeatable)
 ```
 
 ### Examples
@@ -148,6 +154,19 @@ Flags:
 
 # Strict CI (no autofix)
 ./bin/punchtrunk --mode lint,hotspots --autofix=none --base-branch=origin/main
+
+# Reuse an existing Trunk config and scope to specific tools
+./bin/punchtrunk --mode fmt,lint --trunk-config-dir=/path/to/.trunk --trunk-arg=--filter=tool:eslint
+
+# Air-gapped runner (skip installer, point at cached binary)
+PUNCHTRUNK_AIRGAPPED=1 ./bin/punchtrunk --mode lint --trunk-binary=/opt/trunk/bin/trunk
+
+## Offline / air-gapped environments
+
+- PunchTrunk auto-installs Trunk when it cannot find the CLI on `PATH`. Set `PUNCHTRUNK_AIRGAPPED=1` to disable the download step on runners without outbound network access.
+- Supply the executable explicitly with `--trunk-binary=/path/to/trunk` or `PUNCHTRUNK_TRUNK_BINARY=/path/to/trunk`. The path is validated for existence and executability before any Trunk command is executed.
+- Cached installs created by PunchTrunk live under `~/.trunk/bin`; reuse that path for future jobs if you pre-bake the toolchain.
+- When the workspace is read-only, hotspot SARIF output automatically falls back to `/tmp/punchtrunk/reports/<file>` and a log line explains the redirect.
 ```
 
 ---
@@ -174,6 +193,12 @@ Docs:
 
 - [Hold-the-line & base branch](https://docs.trunk.io/code-quality/setup-and-installation/prevent-new-issues)
 - [`trunk check` / `trunk fmt`](https://docs.trunk.io/code-quality/linters/run-linters)
+
+### Coexisting with existing toolchains
+
+- Projects that already ship Trunk configs can pass `--trunk-config-dir=/path/to/.trunk` so PunchTrunk reuses their pinned toolchain instead of the bundled defaults.
+- Use repeatable `--trunk-arg` flags to forward options like `--filter=tool:eslint` or `--config-dir=...` directly to `trunk`.
+- PunchTrunk inspects common formatter and linter configs (Prettier, Black, ESLint, Rubocop, etc.) and prints guidance when overlap is detected so you can disable duplicate runners or filter scopes.
 
 ---
 
@@ -272,6 +297,7 @@ See [Deployment Pipeline](docs/delivery/DEPLOYMENT_PIPELINE.md) and [E2E Strateg
 - **Autofix surprises?** Set `--autofix=none` in CI and rely on inline annotations.
 - **Tests failing?** Run `go test -v ./...` locally to diagnose. Check git is configured properly for E2E tests.
 - **SARIF validation errors?** Validate with `jq empty reports/hotspots.sarif` to ensure valid JSON.
+- **Workspace read-only?** PunchTrunk will redirect hotspot output to `/tmp/punchtrunk/reports` automatically; check the log entry for the new path if uploads cannot find the file.
 
 ---
 
