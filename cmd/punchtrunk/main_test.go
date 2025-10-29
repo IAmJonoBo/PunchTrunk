@@ -153,3 +153,161 @@ func mustChdir(t *testing.T, dir string) string {
 	}
 	return prev
 }
+
+// TestRoughComplexity validates the complexity heuristic for various file types.
+func TestRoughComplexity(t *testing.T) {
+	tests := []struct {
+		name     string
+		content  string
+		wantMin  float64
+		wantMax  float64
+	}{
+		{
+			name:    "simple go file",
+			content: "package main\n\nfunc main() {\n}\n",
+			wantMin: 1.0,
+			wantMax: 3.0,
+		},
+		{
+			name:    "complex go file",
+			content: "package main\n\nfunc complex() {\n  x := 1\n  y := 2\n  z := x + y\n  return z\n}\n",
+			wantMin: 2.0,
+			wantMax: 5.0,
+		},
+		{
+			name:    "empty file",
+			content: "",
+			wantMin: 0.0,
+			wantMax: 0.0,
+		},
+		{
+			name:    "single line",
+			content: "package main",
+			wantMin: 1.0,
+			wantMax: 3.0,
+		},
+	}
+	
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			dir := t.TempDir()
+			path := filepath.Join(dir, "test.go")
+			if err := os.WriteFile(path, []byte(tt.content), 0o644); err != nil {
+				t.Fatalf("writeFile: %v", err)
+			}
+			
+			complexity, err := roughComplexity(path)
+			if err != nil {
+				t.Fatalf("roughComplexity: %v", err)
+			}
+			
+			if complexity < tt.wantMin || complexity > tt.wantMax {
+				t.Errorf("complexity = %f, want between %f and %f", complexity, tt.wantMin, tt.wantMax)
+			}
+		})
+	}
+}
+
+// TestMeanStd validates statistical helper functions.
+func TestMeanStd(t *testing.T) {
+	tests := []struct {
+		name     string
+		vals     []float64
+		wantMean float64
+		wantStd  float64
+	}{
+		{
+			name:     "empty",
+			vals:     []float64{},
+			wantMean: 0.0,
+			wantStd:  0.0,
+		},
+		{
+			name:     "single value",
+			vals:     []float64{5.0},
+			wantMean: 5.0,
+			wantStd:  0.0,
+		},
+		{
+			name:     "uniform values",
+			vals:     []float64{3.0, 3.0, 3.0},
+			wantMean: 3.0,
+			wantStd:  0.0,
+		},
+		{
+			name:     "varied values",
+			vals:     []float64{1.0, 2.0, 3.0, 4.0, 5.0},
+			wantMean: 3.0,
+			wantStd:  1.4142, // approximately sqrt(2)
+		},
+	}
+	
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			mean, std := meanStd(tt.vals)
+			
+			if mean != tt.wantMean {
+				t.Errorf("mean = %f, want %f", mean, tt.wantMean)
+			}
+			
+			// Allow some tolerance for floating point
+			if tt.wantStd > 0 && (std < tt.wantStd-0.01 || std > tt.wantStd+0.01) {
+				t.Errorf("std = %f, want %f (±0.01)", std, tt.wantStd)
+			} else if tt.wantStd == 0 && std != 0 {
+				t.Errorf("std = %f, want %f", std, tt.wantStd)
+			}
+		})
+	}
+}
+
+// TestSplitCSV validates CSV parsing helper.
+func TestSplitCSV(t *testing.T) {
+	tests := []struct {
+		input string
+		want  []string
+	}{
+		{"fmt,lint,hotspots", []string{"fmt", "lint", "hotspots"}},
+		{"fmt, lint, hotspots", []string{"fmt", "lint", "hotspots"}},
+		{"fmt", []string{"fmt"}},
+		{"", []string{}},
+		{"  fmt  ,  lint  ", []string{"fmt", "lint"}},
+		{"fmt,,lint", []string{"fmt", "lint"}},
+	}
+	
+	for _, tt := range tests {
+		t.Run(tt.input, func(t *testing.T) {
+			got := splitCSV(tt.input)
+			if len(got) != len(tt.want) {
+				t.Fatalf("len = %d, want %d", len(got), len(tt.want))
+			}
+			for i := range got {
+				if got[i] != tt.want[i] {
+					t.Errorf("got[%d] = %q, want %q", i, got[i], tt.want[i])
+				}
+			}
+		})
+	}
+}
+
+// TestAtoiSafe validates safe integer parsing.
+func TestAtoiSafe(t *testing.T) {
+	tests := []struct {
+		input string
+		want  int
+	}{
+		{"42", 42},
+		{"0", 0},
+		{"-5", -5},
+		{"invalid", 0},
+		{"", 0},
+	}
+	
+	for _, tt := range tests {
+		t.Run(tt.input, func(t *testing.T) {
+			got := atoiSafe(tt.input)
+			if got != tt.want {
+				t.Errorf("atoiSafe(%q) = %d, want %d", tt.input, got, tt.want)
+			}
+		})
+	}
+}

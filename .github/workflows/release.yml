@@ -1,0 +1,316 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - 'v*'
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: 'Tag to release (e.g., v1.0.0)'
+        required: true
+
+permissions:
+  contents: write
+  packages: write
+  id-token: write  # For cosign
+
+jobs:
+  build:
+    name: Build Multi-Platform Binaries
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    strategy:
+      matrix:
+        include:
+          - goos: linux
+            goarch: amd64
+            name: punchtrunk-linux-amd64
+          - goos: linux
+            goarch: arm64
+            name: punchtrunk-linux-arm64
+          - goos: darwin
+            goarch: amd64
+            name: punchtrunk-darwin-amd64
+          - goos: darwin
+            goarch: arm64
+            name: punchtrunk-darwin-arm64
+          - goos: windows
+            goarch: amd64
+            name: punchtrunk-windows-amd64.exe
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0  # For git history in hotspots
+
+      - name: Setup Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: "1.22.x"
+          cache: true
+
+      - name: Run tests
+        run: go test -v ./...
+
+      - name: Build binary
+        env:
+          GOOS: ${{ matrix.goos }}
+          GOARCH: ${{ matrix.goarch }}
+          CGO_ENABLED: 0
+        run: |
+          go build -ldflags="-s -w" -o dist/${{ matrix.name }} ./cmd/punchtrunk
+          
+      - name: Generate checksums
+        run: |
+          cd dist
+          sha256sum ${{ matrix.name }} > ${{ matrix.name }}.sha256
+          
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ matrix.name }}
+          path: |
+            dist/${{ matrix.name }}
+            dist/${{ matrix.name }}.sha256
+          retention-days: 7
+
+  docker:
+    name: Build and Push Container Image
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    needs: build
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Log in to GitHub Container Registry
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Extract version
+        id: version
+        run: |
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+            VERSION="${{ github.event.inputs.tag }}"
+          else
+            VERSION="${GITHUB_REF#refs/tags/}"
+          fi
+          echo "version=${VERSION}" >> $GITHUB_OUTPUT
+          echo "version_short=${VERSION#v}" >> $GITHUB_OUTPUT
+
+      - name: Build and push Docker image
+        uses: docker/build-push-action@v5
+        id: docker_build
+        with:
+          context: .
+          platforms: linux/amd64,linux/arm64
+          push: true
+          tags: |
+            ghcr.io/${{ github.repository_owner }}/punchtrunk:${{ steps.version.outputs.version }}
+            ghcr.io/${{ github.repository_owner }}/punchtrunk:${{ steps.version.outputs.version_short }}
+            ghcr.io/${{ github.repository_owner }}/punchtrunk:latest
+          labels: |
+            org.opencontainers.image.title=PunchTrunk
+            org.opencontainers.image.description=Polyglot linting orchestrator with hotspot analysis
+            org.opencontainers.image.version=${{ steps.version.outputs.version }}
+            org.opencontainers.image.source=${{ github.repositoryUrl }}
+            org.opencontainers.image.revision=${{ github.sha }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+      - name: Install cosign
+        uses: sigstore/cosign-installer@v3
+
+      - name: Sign container image
+        env:
+          COSIGN_EXPERIMENTAL: "true"
+        run: |
+          cosign sign --yes \
+            ghcr.io/${{ github.repository_owner }}/punchtrunk@${{ steps.docker_build.outputs.digest }}
+
+  release:
+    name: Create GitHub Release
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    needs: [build, docker]
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Extract version
+        id: version
+        run: |
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+            VERSION="${{ github.event.inputs.tag }}"
+          else
+            VERSION="${GITHUB_REF#refs/tags/}"
+          fi
+          echo "version=${VERSION}" >> $GITHUB_OUTPUT
+
+      - name: Download all artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: dist/
+
+      - name: Prepare release assets
+        run: |
+          mkdir -p release
+          find dist -type f \( -name "punchtrunk-*" -o -name "*.sha256" \) -exec cp {} release/ \;
+          ls -lah release/
+
+      - name: Generate release notes
+        id: notes
+        run: |
+          cat > release-notes.md << 'EOF'
+          ## PunchTrunk ${{ steps.version.outputs.version }}
+          
+          ### Installation
+          
+          #### Binary Installation
+          
+          Download the binary for your platform from the assets below and add it to your PATH:
+          
+          ```bash
+          # Linux AMD64
+          curl -L https://github.com/${{ github.repository }}/releases/download/${{ steps.version.outputs.version }}/punchtrunk-linux-amd64 -o punchtrunk
+          chmod +x punchtrunk
+          sudo mv punchtrunk /usr/local/bin/
+          
+          # macOS ARM64 (M1/M2)
+          curl -L https://github.com/${{ github.repository }}/releases/download/${{ steps.version.outputs.version }}/punchtrunk-darwin-arm64 -o punchtrunk
+          chmod +x punchtrunk
+          sudo mv punchtrunk /usr/local/bin/
+          ```
+          
+          #### Container Image
+          
+          ```bash
+          docker pull ghcr.io/${{ github.repository_owner }}/punchtrunk:${{ steps.version.outputs.version }}
+          
+          # Run with current directory mounted
+          docker run --rm -v $(pwd):/workspace -w /workspace \
+            ghcr.io/${{ github.repository_owner }}/punchtrunk:${{ steps.version.outputs.version }} \
+            --mode hotspots
+          ```
+          
+          #### Verification
+          
+          Container images are signed with cosign (keyless OIDC):
+          
+          ```bash
+          cosign verify \
+            --certificate-identity-regexp="^https://github.com/${{ github.repository }}.*" \
+            --certificate-oidc-issuer="https://token.actions.githubusercontent.com" \
+            ghcr.io/${{ github.repository_owner }}/punchtrunk:${{ steps.version.outputs.version }}
+          ```
+          
+          Binary checksums are provided as `.sha256` files.
+          
+          ### What's Included
+          
+          - Multi-platform binaries (Linux, macOS, Windows on AMD64/ARM64)
+          - Container images for Linux AMD64/ARM64
+          - Signed container images with cosign
+          - SHA256 checksums for all binaries
+          
+          ### Quick Start
+          
+          ```bash
+          # Initialize Trunk in your repository
+          trunk init
+          
+          # Run PunchTrunk
+          punchtrunk --mode fmt,lint,hotspots
+          
+          # View hotspots
+          cat reports/hotspots.sarif | jq '.runs[0].results[] | {file: .locations[0].physicalLocation.artifactLocation.uri, message: .message.text}'
+          ```
+          
+          ### Documentation
+          
+          - [README](https://github.com/${{ github.repository }}/blob/main/README.md)
+          - [SARIF Schema Documentation](https://github.com/${{ github.repository }}/blob/main/docs/SARIF_SCHEMA.md)
+          - [Deployment Pipeline](https://github.com/${{ github.repository }}/blob/main/docs/delivery/DEPLOYMENT_PIPELINE.md)
+          - [Testing Strategy](https://github.com/${{ github.repository }}/blob/main/docs/testing-strategy.md)
+          
+          ### Changelog
+          
+          EOF
+          
+          # Add git log since last tag
+          LAST_TAG=$(git describe --tags --abbrev=0 HEAD^ 2>/dev/null || echo "")
+          if [ -n "$LAST_TAG" ]; then
+            echo "**Changes since ${LAST_TAG}:**" >> release-notes.md
+            echo "" >> release-notes.md
+            git log ${LAST_TAG}..HEAD --pretty=format:"- %s (%h)" --no-merges >> release-notes.md
+          else
+            echo "**Initial release**" >> release-notes.md
+          fi
+          
+          cat release-notes.md
+
+      - name: Create Release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ steps.version.outputs.version }}
+          name: PunchTrunk ${{ steps.version.outputs.version }}
+          body_path: release-notes.md
+          files: release/*
+          draft: false
+          prerelease: false
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+  post-release:
+    name: Post-Release Validation
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    needs: release
+    
+    steps:
+      - name: Extract version
+        id: version
+        run: |
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+            VERSION="${{ github.event.inputs.tag }}"
+          else
+            VERSION="${GITHUB_REF#refs/tags/}"
+          fi
+          echo "version=${VERSION}" >> $GITHUB_OUTPUT
+
+      - name: Test container image
+        run: |
+          docker pull ghcr.io/${{ github.repository_owner }}/punchtrunk:${{ steps.version.outputs.version }}
+          docker run --rm ghcr.io/${{ github.repository_owner }}/punchtrunk:${{ steps.version.outputs.version }} --help || true
+
+      - name: Verify container signature
+        run: |
+          cosign verify \
+            --certificate-identity-regexp="^https://github.com/${{ github.repository }}.*" \
+            --certificate-oidc-issuer="https://token.actions.githubusercontent.com" \
+            ghcr.io/${{ github.repository_owner }}/punchtrunk:${{ steps.version.outputs.version }}
+
+      - name: Post-release summary
+        run: |
+          echo "✅ Release ${{ steps.version.outputs.version }} published successfully!"
+          echo ""
+          echo "📦 Artifacts:"
+          echo "  - Binaries: https://github.com/${{ github.repository }}/releases/tag/${{ steps.version.outputs.version }}"
+          echo "  - Container: ghcr.io/${{ github.repository_owner }}/punchtrunk:${{ steps.version.outputs.version }}"
+          echo ""
+          echo "📝 Next steps:"
+          echo "  - Update ROADMAP.md with shipped items"
+          echo "  - Announce release in discussions/social media"
+          echo "  - Monitor GitHub Code Scanning uploads"
