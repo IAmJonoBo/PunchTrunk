@@ -142,12 +142,14 @@ Flags:
    --sarif-out=reports/hotspots.sarif  Where to write hotspot SARIF (falls back to /tmp/punchtrunk/reports when workspace is read-only)
    --verbose                  Extra logs
    --json-logs                Emit structured JSON logs (also honours PUNCHTRUNK_JSON_LOGS)
+   --tmp-dir=<path>           Override temporary directory for SARIF fallbacks and installer staging
    --trunk-config-dir=<dir>   Use an alternate Trunk config directory when reusing an existing setup
    --trunk-binary=<path>      Explicit trunk binary to run (air-gapped/offline runners)
    --trunk-arg=<value>        Additional argument forwarded to `trunk` (repeatable)
 ```
 
 Set `PUNCHTRUNK_JSON_LOGS=true` to enable JSON output without editing invocation scripts.
+Set `PUNCHTRUNK_TMP_DIR=/path/to/tmp` to choose a writable fallback location for SARIF and installer files.
 
 ### Examples
 
@@ -169,6 +171,9 @@ PUNCHTRUNK_AIRGAPPED=1 ./bin/punchtrunk --mode lint --trunk-binary=/opt/trunk/bi
 
 # Emit structured logs for ingestion
 ./bin/punchtrunk --mode fmt,lint --json-logs
+
+# Redirect tmp usage off the default /tmp mount
+./bin/punchtrunk --mode hotspots --tmp-dir=/var/punchtrunk/tmp
 
 ```
 

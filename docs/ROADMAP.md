@@ -34,11 +34,11 @@ Quality gates apply to every roadmap item:
 - Tests: table-driven unit tests for diagnostics plus golden output fixtures.
 - Quality gate notes: wire JSON snapshot tests to prevent regressions.
 
-1. **JSON Logging Toggle (`--json-logs`)**
+1. ✅ **JSON Logging Toggle (`--json-logs`)**
 
-- Description: emit structured events covering mode entry/exit, trunk path, SARIF location, and timings.
-- Tests: verify log schema with golden comparisons and ensure legacy text logs remain when flag absent.
-- Quality gate notes: document schema in `docs/logging.md`.
+- Shipped: Oct 2025. Provides structured events for mode lifecycle, trunk discovery, SARIF writes, and diagnostics.
+- Tests: `cmd/punchtrunk/main_test.go` validates JSON log shape and logger reuse.
+- Docs: README updated with flag/env guidance; schema captured in `docs/logging.md`.
 
 1. **Configurable Temp Directory (`--tmp-dir`)**
 

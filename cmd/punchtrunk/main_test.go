@@ -178,7 +178,7 @@ func TestRunHotspotsRedirectsOnReadOnlyWorkspace(t *testing.T) {
 		t.Fatalf("runHotspots: %v", err)
 	}
 
-	expected := filepath.Join(os.TempDir(), "punchtrunk", "reports", baseName)
+	expected := filepath.Join(cfg.tempDir(), "punchtrunk", "reports", baseName)
 	if cfg.SarifOut != expected {
 		t.Fatalf("expected SARIF path %s, got %s", expected, cfg.SarifOut)
 	}
@@ -188,6 +188,80 @@ func TestRunHotspotsRedirectsOnReadOnlyWorkspace(t *testing.T) {
 	t.Cleanup(func() {
 		_ = os.Remove(expected)
 	})
+}
+
+func TestRunHotspotsUsesCustomTmpDirFallback(t *testing.T) {
+	repo := t.TempDir()
+	gitInit(t, repo)
+	writeFile(t, repo, "main.go", "package main\n\nfunc main() {}\n")
+	gitAddCommit(t, repo, "initial commit")
+	writeFile(t, repo, "main.go", "package main\n\nfunc main() {\n\tprintln(\"hi\")\n}\n")
+	gitAddCommit(t, repo, "update main")
+
+	prev := mustChdir(t, repo)
+	defer func() {
+		_ = os.Chdir(prev)
+	}()
+
+	readonlyRoot := filepath.Join(repo, "readonly")
+	if err := os.Mkdir(readonlyRoot, 0o555); err != nil {
+		t.Fatalf("mkdir readonly: %v", err)
+	}
+	defer func() {
+		_ = os.Chmod(readonlyRoot, 0o755)
+	}()
+
+	customTmp := filepath.Join(repo, "custom-tmp")
+
+	baseName := fmt.Sprintf("hotspots-%d.sarif", time.Now().UnixNano())
+	originalOut := filepath.Join(readonlyRoot, "subdir", baseName)
+	cfg := &Config{
+		Modes:      []string{"hotspots"},
+		BaseBranch: "HEAD~1",
+		Timeout:    5 * time.Second,
+		SarifOut:   originalOut,
+		TmpDir:     customTmp,
+	}
+
+	if err := runHotspots(context.Background(), cfg); err != nil {
+		t.Fatalf("runHotspots: %v", err)
+	}
+
+	resDir := filepath.Join(customTmp, "punchtrunk", "reports", baseName)
+	if cfg.SarifOut != resDir {
+		t.Fatalf("expected SARIF path %s, got %s", resDir, cfg.SarifOut)
+	}
+	if _, err := os.Stat(resDir); err != nil {
+		t.Fatalf("expected fallback SARIF at %s: %v", resDir, err)
+	}
+	t.Cleanup(func() {
+		_ = os.Remove(resDir)
+	})
+}
+
+func TestConfigResolveTmpDirRelative(t *testing.T) {
+	cwd := t.TempDir()
+	prev := mustChdir(t, cwd)
+	defer func() {
+		_ = os.Chdir(prev)
+	}()
+
+	cfg := &Config{TmpDir: filepath.Join("relative", "tmp")}
+	resolved, err := cfg.resolveTmpDir()
+	if err != nil {
+		t.Fatalf("resolveTmpDir: %v", err)
+	}
+	wd, err := os.Getwd()
+	if err != nil {
+		t.Fatalf("getwd: %v", err)
+	}
+	expected := filepath.Join(wd, "relative", "tmp")
+	if resolved != expected {
+		t.Fatalf("expected resolved tmp dir %s, got %s", expected, resolved)
+	}
+	if _, err := os.Stat(expected); err != nil {
+		t.Fatalf("expected tmp dir to exist: %v", err)
+	}
 }
 
 func TestOfflineBundleSupportsAirgappedHotspots(t *testing.T) {

@@ -157,12 +157,16 @@ type Config struct {
 	SarifOut       string
 	Verbose        bool
 	JSONLogs       bool
+	TmpDir         string
 	ShowVersion    bool
 	TrunkPath      string
 	TrunkConfigDir string
 	TrunkArgs      []string
 	TrunkBinary    string
 	logger         *eventLogger
+	tmpDirResolved string
+	tmpDirErr      error
+	tmpDirOnce     sync.Once
 }
 
 func main() {
@@ -229,7 +233,7 @@ func main() {
 		case "hotspots":
 			err = runHotspots(ctx, cfg)
 		case "diagnose-airgap":
-			err = runDiagnoseAirgap(ctx, cfg)
+			err = runDiagnoseAirgap(cfg)
 		default:
 			if cfg.Verbose {
 				cfg.log().Warnf("Skipping unknown mode %q", raw)
@@ -273,6 +277,65 @@ func (cfg *Config) log() *eventLogger {
 	return cfg.logger
 }
 
+func (cfg *Config) resolveTmpDir() (string, error) {
+	if cfg == nil {
+		dir := os.TempDir()
+		if dir == "" {
+			return "", fmt.Errorf("system temp dir unavailable")
+		}
+		return dir, nil
+	}
+	cfg.tmpDirOnce.Do(func() {
+		base := strings.TrimSpace(cfg.TmpDir)
+		if base == "" {
+			base = os.TempDir()
+		} else {
+			if !filepath.IsAbs(base) {
+				cwd, err := os.Getwd()
+				if err != nil {
+					cfg.tmpDirErr = fmt.Errorf("resolve tmp-dir: %w", err)
+					return
+				}
+				base = filepath.Join(cwd, base)
+			}
+			base = filepath.Clean(base)
+		}
+		if base == "" {
+			cfg.tmpDirErr = fmt.Errorf("tmp-dir resolved to empty path")
+			return
+		}
+		if err := os.MkdirAll(base, 0o755); err != nil {
+			cfg.tmpDirErr = fmt.Errorf("ensure tmp-dir %s: %w", base, err)
+			return
+		}
+		cfg.tmpDirResolved = base
+	})
+	if cfg.tmpDirErr != nil {
+		return "", cfg.tmpDirErr
+	}
+	if cfg.tmpDirResolved == "" {
+		dir := os.TempDir()
+		if dir == "" {
+			return "", fmt.Errorf("system temp dir unavailable")
+		}
+		return dir, nil
+	}
+	return cfg.tmpDirResolved, nil
+}
+
+func (cfg *Config) tempDir() string {
+	dir, err := cfg.resolveTmpDir()
+	if err != nil {
+		cfg.log().Warnf("tmp-dir resolution failed: %v", err)
+		fallback := os.TempDir()
+		if fallback == "" {
+			return "."
+		}
+		return fallback
+	}
+	return dir
+}
+
 // Global to capture trunk check exit for CI policy.
 var exitErr error
 
@@ -290,6 +353,7 @@ func parseFlags() *Config {
 	var sarifOut string
 	var verbose bool
 	var jsonLogs bool
+	var tmpDir string
 	var autofix string
 	var version bool
 	var trunkConfigDir string
@@ -303,6 +367,7 @@ func parseFlags() *Config {
 	flag.StringVar(&sarifOut, "sarif-out", "reports/hotspots.sarif", "SARIF output path for hotspots")
 	flag.BoolVar(&verbose, "verbose", false, "Verbose logs")
 	flag.BoolVar(&jsonLogs, "json-logs", false, "Emit structured JSON logs")
+	flag.StringVar(&tmpDir, "tmp-dir", "", "Override temporary directory PunchTrunk uses for fallbacks and installers")
 	flag.BoolVar(&version, "version", false, "Show version and exit")
 	flag.StringVar(&trunkConfigDir, "trunk-config-dir", "", "Override Trunk config directory (defaults to repo autodetect)")
 	flag.StringVar(&trunkBinary, "trunk-binary", "", "Explicit path to trunk executable (for airgapped runners)")
@@ -332,6 +397,12 @@ func parseFlags() *Config {
 		}
 	}
 
+	if tmpDir == "" {
+		if env := strings.TrimSpace(os.Getenv("PUNCHTRUNK_TMP_DIR")); env != "" {
+			tmpDir = env
+		}
+	}
+
 	return &Config{
 		Modes:          modeList,
 		Autofix:        strings.ToLower(strings.TrimSpace(autofix)),
@@ -341,6 +412,7 @@ func parseFlags() *Config {
 		SarifOut:       filepath.Clean(sarifOut),
 		Verbose:        verbose,
 		JSONLogs:       jsonLogs,
+		TmpDir:         strings.TrimSpace(tmpDir),
 		ShowVersion:    version,
 		TrunkConfigDir: trunkConfigDir,
 		TrunkArgs:      trunkArgs,
@@ -428,7 +500,7 @@ func runHotspots(ctx context.Context, cfg *Config) error {
 	dir := filepath.Dir(cfg.SarifOut)
 	if dir != "." {
 		if err := os.MkdirAll(dir, 0o755); err != nil {
-			fallback, ok := sarifFallbackPath(cfg.SarifOut, err)
+			fallback, ok := sarifFallbackPath(cfg, cfg.SarifOut, err)
 			if !ok {
 				return fmt.Errorf("create SARIF directory %s: %w", dir, err)
 			}
@@ -450,14 +522,20 @@ func runHotspots(ctx context.Context, cfg *Config) error {
 	return nil
 }
 
-func sarifFallbackPath(current string, mkdirErr error) (string, bool) {
+func sarifFallbackPath(cfg *Config, current string, mkdirErr error) (string, bool) {
 	if current == "" {
 		return "", false
 	}
 	if !isPermissionOrReadOnly(mkdirErr) {
 		return "", false
 	}
-	fallbackDir := filepath.Join(os.TempDir(), "punchtrunk", "reports")
+	base := os.TempDir()
+	if cfg != nil {
+		if dir, err := cfg.resolveTmpDir(); err == nil {
+			base = dir
+		}
+	}
+	fallbackDir := filepath.Join(base, "punchtrunk", "reports")
 	return filepath.Join(fallbackDir, filepath.Base(current)), true
 }
 
@@ -617,6 +695,10 @@ func ensureEnvironment(ctx context.Context, cfg *Config) error {
 		return fmt.Errorf("git is required: %w", err)
 	}
 
+	if _, err := cfg.resolveTmpDir(); err != nil {
+		return err
+	}
+
 	if cfg.TrunkConfigDir != "" {
 		abs, err := filepath.Abs(cfg.TrunkConfigDir)
 		if err != nil {
@@ -659,7 +741,7 @@ func ensureEnvironment(ctx context.Context, cfg *Config) error {
 	return nil
 }
 
-func runDiagnoseAirgap(ctx context.Context, cfg *Config) error {
+func runDiagnoseAirgap(cfg *Config) error {
 	report := diagnoseAirgap(cfg)
 	data, err := json.MarshalIndent(report, "", "  ")
 	if err != nil {
@@ -731,39 +813,46 @@ func checkTrunkBinary(cfg *Config) DiagnoseCheck {
 		sources = append(sources, env)
 	}
 	sources = uniqueStrings(sources)
-	for _, src := range sources {
-		resolved, err := resolveTrunkBinary(src)
-		if err != nil {
+	if len(sources) > 0 {
+		var lastFailure DiagnoseCheck
+		for _, src := range sources {
+			resolved, err := resolveTrunkBinary(src)
+			if err != nil {
+				lastFailure = DiagnoseCheck{
+					Name:           name,
+					Status:         diagnoseStatusError,
+					Message:        fmt.Sprintf("trunk binary %s is invalid: %v", src, err),
+					Recommendation: "Provide a valid trunk executable via --trunk-binary or PUNCHTRUNK_TRUNK_BINARY.",
+				}
+				continue
+			}
+			message := fmt.Sprintf("resolved trunk executable at %s", resolved)
+			cmd := exec.Command(resolved, "--version")
+			cmd.Env = append(os.Environ(), "TRUNK_TELEMETRY_OPTOUT=1")
+			out, err := cmd.CombinedOutput()
+			if err != nil {
+				return DiagnoseCheck{
+					Name:           name,
+					Status:         diagnoseStatusWarn,
+					Message:        fmt.Sprintf("%s but '--version' failed: %v (%s)", message, err, strings.TrimSpace(string(out))),
+					Recommendation: "Verify the trunk binary runs without network access or rebuild the offline bundle.",
+				}
+			}
+			version := strings.TrimSpace(string(out))
+			if idx := strings.Index(version, "\n"); idx >= 0 {
+				version = version[:idx]
+			}
+			if version == "" {
+				version = "unknown version"
+			}
 			return DiagnoseCheck{
-				Name:           name,
-				Status:         diagnoseStatusError,
-				Message:        fmt.Sprintf("trunk binary %s is invalid: %v", src, err),
-				Recommendation: "Provide a valid trunk executable via --trunk-binary or PUNCHTRUNK_TRUNK_BINARY.",
+				Name:    name,
+				Status:  diagnoseStatusOK,
+				Message: fmt.Sprintf("%s (version: %s)", message, version),
 			}
 		}
-		message := fmt.Sprintf("resolved trunk executable at %s", resolved)
-		cmd := exec.Command(resolved, "--version")
-		cmd.Env = append(os.Environ(), "TRUNK_TELEMETRY_OPTOUT=1")
-		out, err := cmd.CombinedOutput()
-		if err != nil {
-			return DiagnoseCheck{
-				Name:           name,
-				Status:         diagnoseStatusWarn,
-				Message:        fmt.Sprintf("%s but '--version' failed: %v (%s)", message, err, strings.TrimSpace(string(out))),
-				Recommendation: "Verify the trunk binary runs without network access or rebuild the offline bundle.",
-			}
-		}
-		version := strings.TrimSpace(string(out))
-		if idx := strings.Index(version, "\n"); idx >= 0 {
-			version = version[:idx]
-		}
-		if version == "" {
-			version = "unknown version"
-		}
-		return DiagnoseCheck{
-			Name:    name,
-			Status:  diagnoseStatusOK,
-			Message: fmt.Sprintf("%s (version: %s)", message, version),
+		if lastFailure.Name != "" {
+			return lastFailure
 		}
 	}
 	if home, err := os.UserHomeDir(); err == nil {
@@ -847,10 +936,7 @@ func checkSarifOut(cfg *Config) DiagnoseCheck {
 		}
 	}
 	if err := os.Remove(testFile); err != nil {
-		logger := defaultLogger
-		if cfg != nil {
-			logger = cfg.log()
-		}
+		logger := cfg.log()
 		logger.Warnf("unable to clean up diagnostic file %s: %v", testFile, err)
 	}
 	return DiagnoseCheck{
@@ -1052,7 +1138,13 @@ Try {
 		cmd.Stdout = os.Stdout
 		cmd.Stderr = os.Stderr
 	}
-	return cmd.Run()
+	if err := cmd.Run(); err != nil {
+		if !verbose {
+			logger.Warnf("trunk installer failed: %v", err)
+		}
+		return err
+	}
+	return nil
 }
 
 func trunkExecutableName() string {
