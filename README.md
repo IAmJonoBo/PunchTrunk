@@ -143,10 +143,65 @@ References:
 
 ---
 
+## Testing
+
+PunchTrunk includes comprehensive test coverage:
+
+- **Unit tests**: Core logic validation (`main_test.go`)
+- **E2E tests**: Complete workflow scenarios (`e2e_test.go`)
+- **Kitchen Sink test**: Comprehensive validation of all features end-to-end
+
+Run tests locally:
+
+```bash
+# All tests
+go test -v ./...
+
+# Unit tests only
+go test -v ./cmd/punchtrunk -run "^Test[^E2E]"
+
+# E2E tests only
+go test -v ./cmd/punchtrunk -run "TestE2E"
+
+# Kitchen sink test (comprehensive validation)
+go test -v ./cmd/punchtrunk -run "TestE2EKitchenSink"
+```
+
+See [Testing Strategy](docs/testing-strategy.md) for details.
+
+---
+
+## Quality Gates
+
+PunchTrunk enforces quality gates at each pipeline stage:
+
+- **Pre-commit**: Format, lint, unit tests, build
+- **PR**: All tests pass, E2E validation, security scans, SARIF validation
+- **Release**: Multi-platform builds, container security, performance validation
+
+See [Quality Gates](docs/quality/QUALITY_GATES.md) for complete gate definitions.
+
+---
+
+## Deployment
+
+PunchTrunk follows a comprehensive deployment pipeline:
+
+1. **Local Dev** → Format, lint, test, build
+2. **PR CI** → Full validation with E2E tests
+3. **Main CI** → Integration and performance checks
+4. **Release** → Multi-platform builds and container publishing
+5. **Post-Release** → Monitoring and validation
+
+See [Deployment Pipeline](docs/delivery/DEPLOYMENT_PIPELINE.md) and [E2E Strategy](docs/delivery/E2E_STRATEGY.md) for details.
+
+---
+
 ## Extending
 
 - Add Semgrep with autofix rules under `semgrep/` and wire it in `.trunk/trunk.yaml` (optional).
 - Integrate Reviewdog for extra PR comments (especially in non-GitHub or where you want diff-only noise).
+- Extend E2E tests for new features or edge cases.
 
 ---
 
@@ -155,6 +210,8 @@ References:
 - **No issues appearing?** Trunk uses hold-the-line; run `trunk check --all` locally or push a change.
 - **Slow cold starts in CI?** Ensure caches are restoring; check cache key inputs (lockfiles, `.trunk` state).
 - **Autofix surprises?** Set `--autofix=none` in CI and rely on inline annotations.
+- **Tests failing?** Run `go test -v ./...` locally to diagnose. Check git is configured properly for E2E tests.
+- **SARIF validation errors?** Validate with `jq empty reports/hotspots.sarif` to ensure valid JSON.
 
 ---
 

@@ -37,6 +37,11 @@ jobs:
           mkdir -p bin
           go build -o bin/punchtrunk ./cmd/punchtrunk
 
+      # Run tests
+      - name: Run tests
+        run: |
+          go test -v -timeout=5m ./...
+
       - name: Run PunchTrunk hotspots
         run: |
           ./bin/punchtrunk --mode hotspots --base-branch=origin/${{ github.event_name == 'pull_request' && github.event.pull_request.base.ref || 'main' }}
