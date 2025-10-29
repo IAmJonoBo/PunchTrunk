@@ -3,11 +3,11 @@ name: E2E Tests
 on:
   pull_request:
     paths:
-      - 'cmd/**'
-      - 'go.mod'
-      - 'go.sum'
-      - '.github/workflows/e2e.yml'
-      - 'Makefile'
+      - "cmd/**"
+      - "go.mod"
+      - "go.sum"
+      - ".github/workflows/e2e.yml"
+      - "Makefile"
   push:
     branches: [main]
   workflow_dispatch:
@@ -21,13 +21,13 @@ jobs:
     timeout-minutes: 20
     permissions:
       contents: read
-      actions: write  # For uploading artifacts
-    
+      actions: write # For uploading artifacts
+
     steps:
       - name: Checkout repository
         uses: actions/checkout@v5
         with:
-          fetch-depth: 0  # Full history for git operations in tests
+          fetch-depth: 0 # Full history for git operations in tests
 
       - name: Setup Go
         uses: actions/setup-go@v6
@@ -70,8 +70,8 @@ jobs:
     needs: e2e-tests
     permissions:
       contents: read
-      security-events: write  # For uploading SARIF
-    
+      security-events: write # For uploading SARIF
+
     steps:
       - name: Checkout repository
         uses: actions/checkout@v5
@@ -106,7 +106,7 @@ jobs:
       - name: Run PunchTrunk with all modes
         run: |
           ./bin/punchtrunk --mode fmt,lint,hotspots --base-branch=HEAD --verbose
-        continue-on-error: true  # Lint failures shouldn't fail the test
+        continue-on-error: true # Lint failures shouldn't fail the test
 
       - name: Verify SARIF output
         run: |
@@ -124,20 +124,20 @@ jobs:
             echo "ERROR: Expected SARIF version 2.1.0, got $VERSION"
             exit 1
           fi
-          
+
           TOOL_NAME=$(jq -r '.runs[0].tool.driver.name' reports/hotspots.sarif)
           if [ "$TOOL_NAME" != "PunchTrunk" ]; then
             echo "ERROR: Expected tool name PunchTrunk, got $TOOL_NAME"
             exit 1
           fi
-          
+
           echo "✓ SARIF schema validation passed"
 
       - name: Upload SARIF for validation
         uses: github/codeql-action/upload-sarif@v4
         with:
           sarif_file: reports/hotspots.sarif
-        continue-on-error: true  # Upload might fail in forks
+        continue-on-error: true # Upload might fail in forks
 
   # Performance validation
   performance-check:
@@ -146,7 +146,7 @@ jobs:
     needs: e2e-tests
     permissions:
       contents: read
-    
+
     steps:
       - name: Checkout repository
         uses: actions/checkout@v5
@@ -169,26 +169,26 @@ jobs:
           END=$(date +%s)
           DURATION=$((END - START))
           echo "Hotspot computation took ${DURATION}s"
-          
+
           # Fail if takes longer than 2 minutes for this small repo
           if [ $DURATION -gt 120 ]; then
             echo "ERROR: Hotspot computation too slow (${DURATION}s > 120s)"
             exit 1
           fi
-          
+
           echo "✓ Performance check passed (${DURATION}s < 120s)"
 
       - name: Memory usage check
         run: |
           # Run with memory profiling
           /usr/bin/time -v ./bin/punchtrunk --mode hotspots --base-branch=HEAD~10 2>&1 | tee memory.log
-          
+
           # Check maximum resident set size (in KB)
           MAX_RSS=$(grep "Maximum resident set size" memory.log | awk '{print $6}')
           MAX_MB=$((MAX_RSS / 1024))
-          
+
           echo "Peak memory usage: ${MAX_MB} MB"
-          
+
           # Warn if over 500MB (should be much lower for this repo)
           if [ $MAX_MB -gt 500 ]; then
             echo "WARNING: High memory usage: ${MAX_MB}MB"
@@ -199,8 +199,8 @@ jobs:
     runs-on: ubuntu-latest
     needs: [e2e-tests, integration-with-trunk, performance-check]
     if: always()
-    permissions: {}  # No permissions needed for summary
-    
+    permissions: {} # No permissions needed for summary
+
     steps:
       - name: Check quality gates
         run: |
@@ -210,21 +210,21 @@ jobs:
           echo "✓ Integration tests: ${{ needs.integration-with-trunk.result }}"
           echo "✓ Performance checks: ${{ needs.performance-check.result }}"
           echo ""
-          
+
           if [ "${{ needs.e2e-tests.result }}" != "success" ]; then
             echo "❌ E2E tests failed"
             exit 1
           fi
-          
+
           if [ "${{ needs.integration-with-trunk.result }}" != "success" ]; then
             echo "❌ Integration tests failed"
             exit 1
           fi
-          
+
           if [ "${{ needs.performance-check.result }}" != "success" ]; then
             echo "❌ Performance checks failed"
             exit 1
           fi
-          
+
           echo ""
           echo "✅ All quality gates passed!"

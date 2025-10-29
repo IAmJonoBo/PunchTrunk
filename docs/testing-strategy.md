@@ -5,11 +5,13 @@ _This is a How-to and Reference hybrid._
 ## Current Coverage
 
 ### Unit Tests (`main_test.go`)
+
 - `TestHotspotSmoke`: Validates hotspot scoring with deterministic git history
 - `TestWriteSARIF`: Ensures SARIF generation produces valid JSON with correct structure
 - Coverage: Core hotspot functions and SARIF writing
 
 ### E2E Tests (`e2e_test.go`)
+
 - `TestE2EHappyPath`: Complete workflow validation (fmt → lint → hotspots → SARIF)
 - `TestE2EChangedFiles`: Validates changed file prioritization in hotspot scoring
 - `TestE2EAutofixModes`: Tests all autofix modes (none, fmt, lint, all)
@@ -18,6 +20,7 @@ _This is a How-to and Reference hybrid._
 - `TestE2EKitchenSink`: **Comprehensive validation of all features end-to-end**
 
 ### Integration Tests (`.github/workflows/e2e.yml`)
+
 - Full pipeline execution with actual Trunk CLI
 - SARIF validation and upload to Code Scanning
 - Performance benchmarks (< 2 minutes for hotspots)
@@ -25,7 +28,7 @@ _This is a How-to and Reference hybrid._
 
 ## Test Pyramid
 
-```
+```text
          /\
         /  \  E2E & Kitchen Sink (comprehensive, slower)
        /----\
@@ -46,6 +49,7 @@ _This is a How-to and Reference hybrid._
 ## Test Execution
 
 ### Local Development
+
 ```bash
 # Run all tests
 go test -v ./...
@@ -61,6 +65,7 @@ go test -v ./cmd/punchtrunk -run "TestE2EKitchenSink"
 ```
 
 ### CI Pipeline
+
 - **PR CI** (`.github/workflows/ci.yml`): Unit tests + build + lint
 - **E2E CI** (`.github/workflows/e2e.yml`): Full E2E suite + integration + performance
 - **Quality Gates**: All tests must pass before merge

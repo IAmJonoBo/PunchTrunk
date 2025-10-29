@@ -141,10 +141,13 @@ Flags:
    --timeout=<seconds>        Overall wall-clock budget (default: 900)
    --sarif-out=reports/hotspots.sarif  Where to write hotspot SARIF (falls back to /tmp/punchtrunk/reports when workspace is read-only)
    --verbose                  Extra logs
+   --json-logs                Emit structured JSON logs (also honours PUNCHTRUNK_JSON_LOGS)
    --trunk-config-dir=<dir>   Use an alternate Trunk config directory when reusing an existing setup
    --trunk-binary=<path>      Explicit trunk binary to run (air-gapped/offline runners)
    --trunk-arg=<value>        Additional argument forwarded to `trunk` (repeatable)
 ```
+
+Set `PUNCHTRUNK_JSON_LOGS=true` to enable JSON output without editing invocation scripts.
 
 ### Examples
 
@@ -163,6 +166,9 @@ Flags:
 
 # Air-gapped runner (skip installer, point at cached binary)
 PUNCHTRUNK_AIRGAPPED=1 ./bin/punchtrunk --mode lint --trunk-binary=/opt/trunk/bin/trunk
+
+# Emit structured logs for ingestion
+./bin/punchtrunk --mode fmt,lint --json-logs
 
 ```
 

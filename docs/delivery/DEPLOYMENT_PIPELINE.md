@@ -20,6 +20,7 @@ _This document describes the complete deployment pipeline for PunchTrunk from de
 ## Stage 1: Local Development
 
 ### Developer Workflow
+
 ```bash
 # 1. Make changes
 vim cmd/punchtrunk/main.go
@@ -44,6 +45,7 @@ git push
 ```
 
 ### Quality Checks
+
 - Code formatted (trunk fmt)
 - Linters pass (trunk check)
 - Unit tests pass
@@ -51,6 +53,7 @@ git push
 - Manual validation of changes
 
 ### Exit Criteria
+
 - All tests pass locally
 - Code is properly formatted
 - Self-review completed
@@ -61,6 +64,7 @@ git push
 ### Workflow: `.github/workflows/ci.yml`
 
 #### Steps
+
 1. **Checkout** (fetch-depth: 0 for git history)
 2. **Cache Trunk** (speeds up linter startup)
 3. **Trunk Check** (inline annotations on PR)
@@ -71,6 +75,7 @@ git push
 8. **Upload SARIF** (to Code Scanning)
 
 ### Quality Gates (Must Pass)
+
 - ✓ All Trunk checks pass
 - ✓ Binary compiles successfully
 - ✓ All tests pass (unit + E2E)
@@ -82,12 +87,14 @@ git push
 ### Parallel Workflow: `.github/workflows/e2e.yml`
 
 #### Jobs
+
 1. **E2E Tests** (all E2E scenarios)
 2. **Integration with Trunk** (real CLI integration)
 3. **Performance Check** (< 2 min for hotspots)
 4. **Quality Gate Summary** (all gates passed)
 
 ### Exit Criteria
+
 - All CI checks pass
 - E2E workflow completes successfully
 - Code review approved by maintainer
@@ -99,29 +106,32 @@ git push
 ### Workflow: Same as PR CI + Additional Checks
 
 #### Additional Steps
+
 1. **Full Test Suite** (no test filtering)
 2. **Performance Benchmarks** (baseline tracking)
 3. **Coverage Report** (upload to coverage service)
 4. **Build Validation** (ensure main is healthy)
 
 ### Quality Gates
+
 - All PR gates plus:
 - ✓ No test flakiness detected
 - ✓ Performance within baseline
 - ✓ Coverage maintained or improved
 
 ### Failure Response
-- **Critical Failure**: 
+
+- **Critical Failure**:
   - Block all PRs immediately
   - Page on-call engineer
   - Fix or revert within 1 hour
-  
 - **Non-Critical**:
   - Create issue for investigation
   - Track in daily standup
   - Fix in next PR
 
 ### Exit Criteria
+
 - Main branch is healthy
 - All tests passing
 - Performance stable
@@ -130,12 +140,14 @@ git push
 ## Stage 4: Release Pipeline
 
 ### Trigger
+
 - Manual: Create release tag (vX.Y.Z)
 - Or: Push tag matching `v*.*.*` pattern
 
 ### Workflow: `.github/workflows/release.yml` (future)
 
 #### Phase 1: Pre-Release Validation
+
 ```bash
 # 1. Validate version tag
 - Check semantic versioning
@@ -154,6 +166,7 @@ git push
 ```
 
 #### Phase 2: Build Artifacts
+
 ```bash
 # 1. Multi-platform binaries
 - linux-amd64
@@ -174,6 +187,7 @@ git push
 ```
 
 #### Phase 3: Sign Artifacts
+
 ```bash
 # 1. Sign binaries (optional)
 - Use cosign with keyless OIDC
@@ -185,6 +199,7 @@ git push
 ```
 
 #### Phase 4: Publish
+
 ```bash
 # 1. GitHub Release
 - Create release with notes
@@ -204,6 +219,7 @@ git push
 ```
 
 ### Quality Gates
+
 - ✓ All pre-release validations pass
 - ✓ Builds succeed on all platforms
 - ✓ Container security scan passes
@@ -212,6 +228,7 @@ git push
 - ✓ Artifacts uploaded successfully
 
 ### Exit Criteria
+
 - Release published on GitHub
 - Container images available
 - Documentation updated
@@ -223,6 +240,7 @@ git push
 ### Monitoring Period: 24-48 hours
 
 #### Metrics to Watch
+
 1. **CI Success Rate**
    - Monitor repos using new version
    - Track success/failure rates
@@ -251,22 +269,26 @@ git push
 ### Response Procedures
 
 #### Critical Issue (P0)
+
 - Immediate rollback or hotfix
 - Page on-call team
 - Communication to users
 - Post-incident review
 
 #### Major Issue (P1)
+
 - Hotfix release within 24 hours
 - Update release notes
 - Communication to users
 
 #### Minor Issue (P2)
+
 - Fix in next release
 - Track in backlog
 - Document workaround if needed
 
 ### Exit Criteria
+
 - 24 hours with no critical issues
 - Success rate within expected range
 - No performance regressions
@@ -275,6 +297,7 @@ git push
 ## Rollback Procedures
 
 ### Scenario 1: Pre-Release (Release Job Failed)
+
 ```bash
 # 1. Fix issue
 - Address build/test failure
@@ -286,6 +309,7 @@ git push
 ```
 
 ### Scenario 2: Post-Release (Critical Bug Found)
+
 ```bash
 # Option A: Hotfix
 1. Create hotfix branch from release tag
@@ -306,6 +330,7 @@ git push
 ```
 
 ### Rollback Communication
+
 - Update GitHub release notes
 - Post in GitHub Discussions
 - Update documentation
@@ -314,6 +339,7 @@ git push
 ## Continuous Improvement
 
 ### Metrics to Track
+
 - Pipeline duration (trend over time)
 - Test success rate
 - Time to merge (PR created → merged)
@@ -321,12 +347,14 @@ git push
 - Rollback frequency
 
 ### Regular Reviews
+
 - Weekly: CI health check
 - Monthly: Pipeline performance review
 - Quarterly: Full pipeline assessment
 - Annually: Strategy review
 
 ### Optimization Opportunities
+
 - Parallelize independent jobs
 - Optimize test execution
 - Improve cache utilization

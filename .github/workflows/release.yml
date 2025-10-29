@@ -3,17 +3,17 @@ name: Release
 on:
   push:
     tags:
-      - 'v*'
+      - "v*"
   workflow_dispatch:
     inputs:
       tag:
-        description: 'Tag to release (e.g., v1.0.0)'
+        description: "Tag to release (e.g., v1.0.0)"
         required: true
 
 permissions:
   contents: write
   packages: write
-  id-token: write  # For cosign
+  id-token: write # For cosign
 
 jobs:
   build:
@@ -38,12 +38,12 @@ jobs:
           - goos: windows
             goarch: amd64
             name: punchtrunk-windows-amd64.exe
-    
+
     steps:
       - name: Checkout code
         uses: actions/checkout@v5
         with:
-          fetch-depth: 0  # For git history in hotspots
+          fetch-depth: 0 # For git history in hotspots
 
       - name: Setup Go
         uses: actions/setup-go@v6
@@ -72,12 +72,12 @@ jobs:
         run: |
           go build -ldflags="-s -w -X main.Version=${{ steps.version.outputs.version }}" \
             -o dist/${{ matrix.name }} ./cmd/punchtrunk
-          
+
       - name: Generate checksums
         run: |
           cd dist
           sha256sum ${{ matrix.name }} > ${{ matrix.name }}.sha256
-          
+
       - name: Upload artifact
         uses: actions/upload-artifact@v5
         with:
@@ -92,7 +92,7 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 30
     needs: build
-    
+
     steps:
       - name: Checkout code
         uses: actions/checkout@v5
@@ -153,7 +153,7 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 15
     needs: [build, docker]
-    
+
     steps:
       - name: Checkout code
         uses: actions/checkout@v5
@@ -186,80 +186,80 @@ jobs:
         run: |
           cat > release-notes.md << 'EOF'
           ## PunchTrunk ${{ steps.version.outputs.version }}
-          
+
           ### Installation
-          
+
           #### Binary Installation
-          
+
           Download the binary for your platform from the assets below and add it to your PATH:
-          
+
           ```bash
           # Linux AMD64
           curl -L https://github.com/${{ github.repository }}/releases/download/${{ steps.version.outputs.version }}/punchtrunk-linux-amd64 -o punchtrunk
           chmod +x punchtrunk
           sudo mv punchtrunk /usr/local/bin/
-          
+
           # macOS ARM64 (M1/M2)
           curl -L https://github.com/${{ github.repository }}/releases/download/${{ steps.version.outputs.version }}/punchtrunk-darwin-arm64 -o punchtrunk
           chmod +x punchtrunk
           sudo mv punchtrunk /usr/local/bin/
           ```
-          
+
           #### Container Image
-          
+
           ```bash
           docker pull ghcr.io/${{ github.repository_owner }}/punchtrunk:${{ steps.version.outputs.version }}
-          
+
           # Run with current directory mounted
           docker run --rm -v $(pwd):/workspace -w /workspace \
             ghcr.io/${{ github.repository_owner }}/punchtrunk:${{ steps.version.outputs.version }} \
             --mode hotspots
           ```
-          
+
           #### Verification
-          
+
           Container images are signed with cosign (keyless OIDC):
-          
+
           ```bash
           cosign verify \
             --certificate-identity-regexp="^https://github.com/${{ github.repository }}.*" \
             --certificate-oidc-issuer="https://token.actions.githubusercontent.com" \
             ghcr.io/${{ github.repository_owner }}/punchtrunk:${{ steps.version.outputs.version }}
           ```
-          
+
           Binary checksums are provided as `.sha256` files.
-          
+
           ### What's Included
-          
+
           - Multi-platform binaries (Linux, macOS, Windows on AMD64/ARM64)
           - Container images for Linux AMD64/ARM64
           - Signed container images with cosign
           - SHA256 checksums for all binaries
-          
+
           ### Quick Start
-          
+
           ```bash
           # Initialize Trunk in your repository
           trunk init
-          
+
           # Run PunchTrunk
           punchtrunk --mode fmt,lint,hotspots
-          
+
           # View hotspots
           cat reports/hotspots.sarif | jq '.runs[0].results[] | {file: .locations[0].physicalLocation.artifactLocation.uri, message: .message.text}'
           ```
-          
+
           ### Documentation
-          
+
           - [README](https://github.com/${{ github.repository }}/blob/main/README.md)
           - [SARIF Schema Documentation](https://github.com/${{ github.repository }}/blob/main/docs/SARIF_SCHEMA.md)
           - [Deployment Pipeline](https://github.com/${{ github.repository }}/blob/main/docs/delivery/DEPLOYMENT_PIPELINE.md)
           - [Testing Strategy](https://github.com/${{ github.repository }}/blob/main/docs/testing-strategy.md)
-          
+
           ### Changelog
-          
+
           EOF
-          
+
           # Add git log since last tag
           LAST_TAG=$(git describe --tags --abbrev=0 HEAD^ 2>/dev/null || echo "")
           if [ -n "$LAST_TAG" ]; then
@@ -269,7 +269,7 @@ jobs:
           else
             echo "**Initial release**" >> release-notes.md
           fi
-          
+
           cat release-notes.md
 
       - name: Create Release
@@ -289,7 +289,7 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 15
     needs: release
-    
+
     steps:
       - name: Extract version
         id: version

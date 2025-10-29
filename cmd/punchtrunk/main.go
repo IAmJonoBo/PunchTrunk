@@ -45,6 +45,109 @@ func (m *multiFlag) Set(value string) error {
 	return nil
 }
 
+type LogFields map[string]any
+
+type eventLogger struct {
+	mu    sync.Mutex
+	json  bool
+	std   *log.Logger
+	write io.Writer
+}
+
+func newEventLogger(w io.Writer, jsonMode bool) *eventLogger {
+	if w == nil {
+		w = os.Stderr
+	}
+	return &eventLogger{
+		json:  jsonMode,
+		std:   log.New(w, "", log.LstdFlags),
+		write: w,
+	}
+}
+
+func (l *eventLogger) emit(level, message string, fields LogFields) {
+	if l == nil {
+		return
+	}
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	if l.json {
+		payload := make(map[string]any, len(fields)+3)
+		payload["ts"] = time.Now().UTC().Format(time.RFC3339Nano)
+		payload["level"] = level
+		payload["message"] = message
+		for k, v := range fields {
+			payload[k] = v
+		}
+		data, err := json.Marshal(payload)
+		if err != nil {
+			l.std.Printf("ERROR: json log marshal failed: %v", err)
+			l.std.Printf("ERROR: original message: %s", message)
+			return
+		}
+		if _, err := l.write.Write(append(data, '\n')); err != nil {
+			l.std.Printf("ERROR: json log write failed: %v", err)
+		}
+		return
+	}
+	text := message
+	if len(fields) > 0 {
+		var extras []string
+		for k, v := range fields {
+			if k == "event" {
+				if s, ok := v.(string); ok {
+					text = s
+					continue
+				}
+			}
+			extras = append(extras, fmt.Sprintf("%s=%v", k, v))
+		}
+		sort.Strings(extras)
+		if len(extras) > 0 {
+			text = fmt.Sprintf("%s | %s", text, strings.Join(extras, " "))
+		}
+	}
+	switch level {
+	case "warn":
+		l.std.Printf("WARN: %s", text)
+	case "error":
+		l.std.Printf("ERROR: %s", text)
+	default:
+		l.std.Printf("INFO: %s", text)
+	}
+}
+
+func (l *eventLogger) Infof(format string, args ...any) {
+	l.emit("info", fmt.Sprintf(format, args...), nil)
+}
+
+func (l *eventLogger) Warnf(format string, args ...any) {
+	l.emit("warn", fmt.Sprintf(format, args...), nil)
+}
+
+func (l *eventLogger) Errorf(format string, args ...any) {
+	l.emit("error", fmt.Sprintf(format, args...), nil)
+}
+
+func (l *eventLogger) Fatalf(format string, args ...any) {
+	l.emit("error", fmt.Sprintf(format, args...), nil)
+	os.Exit(1)
+}
+
+func (l *eventLogger) Event(level, event string, fields LogFields) {
+	if fields == nil {
+		fields = LogFields{}
+	}
+	copyFields := make(LogFields, len(fields)+1)
+	for k, v := range fields {
+		copyFields[k] = v
+	}
+	copyFields["event"] = event
+	l.emit(level, event, copyFields)
+}
+
+var defaultLogger = newEventLogger(os.Stderr, false)
+
 type Config struct {
 	Modes          []string
 	Autofix        string
@@ -53,15 +156,18 @@ type Config struct {
 	Timeout        time.Duration
 	SarifOut       string
 	Verbose        bool
+	JSONLogs       bool
 	ShowVersion    bool
 	TrunkPath      string
 	TrunkConfigDir string
 	TrunkArgs      []string
 	TrunkBinary    string
+	logger         *eventLogger
 }
 
 func main() {
 	cfg := parseFlags()
+	cfg.log()
 
 	if cfg.ShowVersion {
 		fmt.Printf("PunchTrunk version %s\n", Version)
@@ -94,16 +200,27 @@ func main() {
 
 	if needsEnvironment {
 		if err := ensureEnvironment(ctx, cfg); err != nil {
-			log.Fatalf("environment setup failed: %v", err)
+			cfg.log().Fatalf("environment setup failed: %v", err)
 		}
+		cfg.log().Event("info", "environment.ready", LogFields{
+			"trunk_path": cfg.TrunkPath,
+		})
 	}
 
-	for _, raw := range cfg.Modes {
+	for idx, raw := range cfg.Modes {
 		mode := strings.TrimSpace(strings.ToLower(raw))
 		if mode == "" {
 			continue
 		}
 		var err error
+		cfg.log().Event("info", "mode.start", LogFields{
+			"mode":         mode,
+			"mode_index":   idx,
+			"trunk_path":   cfg.trunkBinary(),
+			"sarif_out":    cfg.SarifOut,
+			"autofix_mode": cfg.Autofix,
+		})
+		modeStart := time.Now()
 		switch mode {
 		case "fmt":
 			err = runTrunkFmt(ctx, cfg)
@@ -115,22 +232,45 @@ func main() {
 			err = runDiagnoseAirgap(ctx, cfg)
 		default:
 			if cfg.Verbose {
-				log.Printf("Skipping unknown mode %q", raw)
+				cfg.log().Warnf("Skipping unknown mode %q", raw)
 			}
 			continue
 		}
 		if err != nil {
+			duration := time.Since(modeStart)
+			cfg.log().Event("error", "mode.error", LogFields{
+				"mode":        mode,
+				"mode_index":  idx,
+				"duration_ms": duration.Milliseconds(),
+				"error":       err.Error(),
+			})
 			if mode == "hotspots" {
-				log.Printf("WARN: %s failed: %v", mode, err)
+				cfg.log().Warnf("%s failed: %v", mode, err)
 				continue
 			}
-			log.Fatalf("ERROR: %s failed: %v", mode, err)
+			cfg.log().Fatalf("%s failed: %v", mode, err)
 		}
+		duration := time.Since(modeStart)
+		cfg.log().Event("info", "mode.finish", LogFields{
+			"mode":        mode,
+			"mode_index":  idx,
+			"duration_ms": duration.Milliseconds(),
+		})
 	}
 
 	if exitErr != nil {
 		os.Exit(1)
 	}
+}
+
+func (cfg *Config) log() *eventLogger {
+	if cfg == nil {
+		return defaultLogger
+	}
+	if cfg.logger == nil {
+		cfg.logger = newEventLogger(os.Stderr, cfg.JSONLogs)
+	}
+	return cfg.logger
 }
 
 // Global to capture trunk check exit for CI policy.
@@ -149,6 +289,7 @@ func parseFlags() *Config {
 	var timeoutSec int
 	var sarifOut string
 	var verbose bool
+	var jsonLogs bool
 	var autofix string
 	var version bool
 	var trunkConfigDir string
@@ -161,6 +302,7 @@ func parseFlags() *Config {
 	flag.IntVar(&timeoutSec, "timeout", 900, "Overall timeout in seconds (0 to disable)")
 	flag.StringVar(&sarifOut, "sarif-out", "reports/hotspots.sarif", "SARIF output path for hotspots")
 	flag.BoolVar(&verbose, "verbose", false, "Verbose logs")
+	flag.BoolVar(&jsonLogs, "json-logs", false, "Emit structured JSON logs")
 	flag.BoolVar(&version, "version", false, "Show version and exit")
 	flag.StringVar(&trunkConfigDir, "trunk-config-dir", "", "Override Trunk config directory (defaults to repo autodetect)")
 	flag.StringVar(&trunkBinary, "trunk-binary", "", "Explicit path to trunk executable (for airgapped runners)")
@@ -182,6 +324,14 @@ func parseFlags() *Config {
 		timeout = 0
 	}
 
+	if !jsonLogs {
+		if env := strings.TrimSpace(os.Getenv("PUNCHTRUNK_JSON_LOGS")); env != "" {
+			if parsed, err := strconv.ParseBool(env); err == nil {
+				jsonLogs = parsed
+			}
+		}
+	}
+
 	return &Config{
 		Modes:          modeList,
 		Autofix:        strings.ToLower(strings.TrimSpace(autofix)),
@@ -190,6 +340,7 @@ func parseFlags() *Config {
 		Timeout:        timeout,
 		SarifOut:       filepath.Clean(sarifOut),
 		Verbose:        verbose,
+		JSONLogs:       jsonLogs,
 		ShowVersion:    version,
 		TrunkConfigDir: trunkConfigDir,
 		TrunkArgs:      trunkArgs,
@@ -224,7 +375,7 @@ func runTrunkFmt(ctx context.Context, cfg *Config) error {
 	applyTrunkCommandEnv(cmd, cfg)
 	maybeWarnCompetingTools("fmt", cfg)
 	if cfg.Verbose {
-		log.Printf("Running: %s %s", cfg.trunkBinary(), strings.Join(args, " "))
+		cfg.log().Infof("Running: %s %s", cfg.trunkBinary(), strings.Join(args, " "))
 	}
 	return cmd.Run()
 }
@@ -254,7 +405,7 @@ func runTrunkCheck(ctx context.Context, cfg *Config) error {
 	applyTrunkCommandEnv(cmd, cfg)
 	maybeWarnCompetingTools("lint", cfg)
 	if cfg.Verbose {
-		log.Printf("Running: %s %s", cfg.trunkBinary(), strings.Join(args, " "))
+		cfg.log().Infof("Running: %s %s", cfg.trunkBinary(), strings.Join(args, " "))
 	}
 	err := cmd.Run()
 	if err != nil {
@@ -270,7 +421,7 @@ func runHotspots(ctx context.Context, cfg *Config) error {
 	}
 	if cfg.SarifOut == "" {
 		if cfg.Verbose {
-			log.Printf("Hotspots computed (%d results) but SARIF output path is empty", len(hs))
+			cfg.log().Warnf("Hotspots computed (%d results) but SARIF output path is empty", len(hs))
 		}
 		return nil
 	}
@@ -281,7 +432,7 @@ func runHotspots(ctx context.Context, cfg *Config) error {
 			if !ok {
 				return fmt.Errorf("create SARIF directory %s: %w", dir, err)
 			}
-			log.Printf("INFO: unable to create SARIF directory %s: %v; writing to %s instead", dir, err, fallback)
+			cfg.log().Warnf("unable to create SARIF directory %s: %v; writing to %s instead", dir, err, fallback)
 			cfg.SarifOut = fallback
 			dir = filepath.Dir(cfg.SarifOut)
 			if err := os.MkdirAll(dir, 0o755); err != nil {
@@ -292,9 +443,10 @@ func runHotspots(ctx context.Context, cfg *Config) error {
 	if err := writeSARIF(cfg.SarifOut, hs); err != nil {
 		return err
 	}
-	if cfg.Verbose {
-		log.Printf("Wrote SARIF to %s (%d results)", cfg.SarifOut, len(hs))
-	}
+	cfg.log().Event("info", "sarif.write", LogFields{
+		"sarif_out": cfg.SarifOut,
+		"count":     len(hs),
+	})
 	return nil
 }
 
@@ -336,18 +488,22 @@ func applyTrunkCommandEnv(cmd *exec.Cmd, cfg *Config) {
 	cmd.Env = env
 }
 
-func maybeWarnCompetingTools(mode string, _ *Config) {
+func maybeWarnCompetingTools(mode string, cfg *Config) {
 	conflicts := detectCompetingToolConfigs(mode)
 	if len(conflicts) == 0 {
 		return
 	}
+	logger := defaultLogger
+	if cfg != nil {
+		logger = cfg.log()
+	}
 	for _, msg := range conflicts {
 		conflictMu.Lock()
 		if _, ok := seenConflictMessages[msg]; !ok {
-			log.Printf("INFO: %s", msg)
+			logger.Infof("%s", msg)
 			seenConflictMessages[msg] = struct{}{}
 			conflictGuidanceOnce.Do(func() {
-				log.Printf("INFO: Use --trunk-config-dir to point at the desired Trunk config or repeat --trunk-arg to forward filters that avoid tool overlap.")
+				logger.Infof("Use --trunk-config-dir to point at the desired Trunk config or repeat --trunk-arg to forward filters that avoid tool overlap.")
 			})
 		}
 		conflictMu.Unlock()
@@ -476,7 +632,7 @@ func ensureEnvironment(ctx context.Context, cfg *Config) error {
 		cfg.TrunkConfigDir = abs
 		if _, err := os.Stat(filepath.Join(abs, "trunk.yaml")); errors.Is(err, os.ErrNotExist) {
 			if cfg.Verbose {
-				log.Printf("WARN: trunk-config-dir %s does not contain trunk.yaml; trunk will rely on discovery", abs)
+				cfg.log().Warnf("trunk-config-dir %s does not contain trunk.yaml; trunk will rely on discovery", abs)
 			}
 		} else if err != nil {
 			return fmt.Errorf("trunk-config-dir %s: %w", abs, err)
@@ -490,7 +646,7 @@ func ensureEnvironment(ctx context.Context, cfg *Config) error {
 		}
 		cfg.TrunkPath = resolved
 		if cfg.Verbose {
-			log.Printf("Using user-supplied trunk binary: %s", resolved)
+			cfg.log().Infof("Using user-supplied trunk binary: %s", resolved)
 		}
 		return nil
 	}
@@ -691,7 +847,11 @@ func checkSarifOut(cfg *Config) DiagnoseCheck {
 		}
 	}
 	if err := os.Remove(testFile); err != nil {
-		log.Printf("WARN: unable to clean up diagnostic file %s: %v", testFile, err)
+		logger := defaultLogger
+		if cfg != nil {
+			logger = cfg.log()
+		}
+		logger.Warnf("unable to clean up diagnostic file %s: %v", testFile, err)
 	}
 	return DiagnoseCheck{
 		Name:    name,
@@ -743,6 +903,10 @@ func airgapMode() bool {
 }
 
 func ensureTrunk(ctx context.Context, cfg *Config) (string, error) {
+	logger := defaultLogger
+	if cfg != nil {
+		logger = cfg.log()
+	}
 	if path, err := exec.LookPath("trunk"); err == nil {
 		if resolved, err := resolveTrunkBinary(path); err == nil {
 			return resolved, nil
@@ -756,14 +920,14 @@ func ensureTrunk(ctx context.Context, cfg *Config) (string, error) {
 	}
 	if airgapMode() {
 		if cfg != nil && cfg.Verbose {
-			log.Printf("Airgapped mode enabled; skipping Trunk auto-install.")
+			logger.Infof("Airgapped mode enabled; skipping Trunk auto-install.")
 		}
 		return "", fmt.Errorf("trunk executable not found and PUNCHTRUNK_AIRGAPPED is set. Provide --trunk-binary or install trunk manually in offline environments")
 	}
 	if cfg != nil && cfg.Verbose {
-		log.Printf("Trunk CLI not found in PATH. Attempting automatic install...")
+		logger.Infof("Trunk CLI not found in PATH. Attempting automatic install...")
 	}
-	if err := installTrunk(ctx, cfg != nil && cfg.Verbose); err != nil {
+	if err := installTrunk(ctx, cfg != nil && cfg.Verbose, logger); err != nil {
 		return "", fmt.Errorf("auto-install trunk: %w", err)
 	}
 	if home, err := os.UserHomeDir(); err == nil {
@@ -780,16 +944,19 @@ func ensureTrunk(ctx context.Context, cfg *Config) (string, error) {
 	return "", fmt.Errorf("trunk executable not found after attempted installation")
 }
 
-func installTrunk(ctx context.Context, verbose bool) error {
+func installTrunk(ctx context.Context, verbose bool, logger *eventLogger) error {
+	if logger == nil {
+		logger = defaultLogger
+	}
 	switch runtime.GOOS {
 	case "windows":
-		return installTrunkWindows(ctx, verbose)
+		return installTrunkWindows(ctx, verbose, logger)
 	default:
-		return installTrunkUnix(ctx, verbose)
+		return installTrunkUnix(ctx, verbose, logger)
 	}
 }
 
-func installTrunkUnix(ctx context.Context, verbose bool) error {
+func installTrunkUnix(ctx context.Context, verbose bool, logger *eventLogger) error {
 	const installURL = "https://get.trunk.io"
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, installURL, nil)
 	if err != nil {
@@ -801,7 +968,7 @@ func installTrunkUnix(ctx context.Context, verbose bool) error {
 	}
 	defer func() {
 		if cerr := resp.Body.Close(); cerr != nil && verbose {
-			log.Printf("WARN: closing trunk installer response: %v", cerr)
+			logger.Warnf("closing trunk installer response: %v", cerr)
 		}
 	}()
 	if resp.StatusCode >= 300 {
@@ -813,17 +980,17 @@ func installTrunkUnix(ctx context.Context, verbose bool) error {
 	}
 	defer func() {
 		if removeErr := os.Remove(tmpFile.Name()); removeErr != nil {
-			msg := fmt.Sprintf("WARN: removing trunk installer script %s: %v", tmpFile.Name(), removeErr)
+			msg := fmt.Sprintf("removing trunk installer script %s: %v", tmpFile.Name(), removeErr)
 			if verbose {
-				log.Print(msg)
+				logger.Warnf("%s", msg)
 			} else {
-				log.Printf("%s. Set TMPDIR to a writable location or clean up the file manually.", msg)
+				logger.Warnf("%s. Set TMPDIR to a writable location or clean up the file manually.", msg)
 			}
 		}
 	}()
 	if _, err := io.Copy(tmpFile, resp.Body); err != nil {
 		if closeErr := tmpFile.Close(); closeErr != nil && verbose {
-			log.Printf("WARN: closing trunk installer temp file: %v", closeErr)
+			logger.Warnf("closing trunk installer temp file: %v", closeErr)
 		}
 		return fmt.Errorf("write installer: %w", err)
 	}
@@ -862,7 +1029,10 @@ func installTrunkUnix(ctx context.Context, verbose bool) error {
 	return nil
 }
 
-func installTrunkWindows(ctx context.Context, verbose bool) error {
+func installTrunkWindows(ctx context.Context, verbose bool, logger *eventLogger) error {
+	if logger == nil {
+		logger = defaultLogger
+	}
 	script := `
 $ErrorActionPreference = "Stop"
 $Installer = Join-Path $env:TEMP "trunk-install-$([System.Guid]::NewGuid()).ps1"
@@ -896,12 +1066,12 @@ func computeHotspots(ctx context.Context, cfg *Config) ([]Hotspot, error) {
 	changed := map[string]bool{}
 	if m, degraded, err := gitChangedFiles(ctx, cfg); err != nil {
 		if cfg != nil && cfg.Verbose {
-			log.Printf("WARN: unable to resolve changed files: %v", err)
+			cfg.log().Warnf("unable to resolve changed files: %v", err)
 		}
 	} else {
 		changed = m
 		if degraded && cfg != nil && cfg.Verbose {
-			log.Printf("INFO: falling back to limited git history for changed files; diff weighting may be incomplete")
+			cfg.log().Infof("falling back to limited git history for changed files; diff weighting may be incomplete")
 		}
 	}
 	// Consider changed files as primary focus; also consider top churn files overall.
@@ -910,7 +1080,7 @@ func computeHotspots(ctx context.Context, cfg *Config) ([]Hotspot, error) {
 		return nil, err
 	}
 	if degradedChurn && cfg != nil && cfg.Verbose {
-		log.Printf("INFO: falling back to limited git history for churn; hotspot rankings may be partial")
+		cfg.log().Infof("falling back to limited git history for churn; hotspot rankings may be partial")
 	}
 	// Simple complexity proxy: token density
 	comp := map[string]float64{}
@@ -923,7 +1093,7 @@ func computeHotspots(ctx context.Context, cfg *Config) ([]Hotspot, error) {
 	// z-score complexity
 	mean, std := meanStd(mapsValues(comp))
 	if len(churn) == 0 && cfg != nil && cfg.Verbose {
-		log.Printf("INFO: no git churn detected; hotspot report may be empty")
+		cfg.log().Infof("no git churn detected; hotspot report may be empty")
 	}
 	for f, ch := range churn {
 		if _, err := os.Stat(f); err != nil {
@@ -981,7 +1151,7 @@ func gitChangedFiles(ctx context.Context, cfg *Config) (map[string]bool, bool, e
 			lastErr = err
 			lastStderr = stderr.String()
 			if cfg != nil && cfg.Verbose {
-				log.Printf("DEBUG: %s failed: %v (%s)", att.desc, err, strings.TrimSpace(lastStderr))
+				cfg.log().Infof("%s failed: %v (%s)", att.desc, err, strings.TrimSpace(lastStderr))
 			}
 			continue
 		}

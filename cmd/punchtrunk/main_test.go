@@ -1,6 +1,7 @@
 package main
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"fmt"
@@ -385,6 +386,48 @@ func TestDiagnoseAirgapDetectsMissingTrunk(t *testing.T) {
 	}
 	if !found {
 		t.Fatalf("expected trunk check present: %+v", report.Checks)
+	}
+}
+
+func TestEventLoggerJSON(t *testing.T) {
+	var buf bytes.Buffer
+	logger := newEventLogger(&buf, true)
+	logger.Event("info", "mode.start", LogFields{"mode": "fmt", "duration_ms": 42})
+	logger.Infof("plain message")
+	dec := json.NewDecoder(&buf)
+	first := map[string]any{}
+	if err := dec.Decode(&first); err != nil {
+		t.Fatalf("decode first event: %v", err)
+	}
+	if first["event"] != "mode.start" {
+		t.Fatalf("expected event mode.start, got %v", first["event"])
+	}
+	if first["mode"] != "fmt" {
+		t.Fatalf("expected mode fmt, got %v", first["mode"])
+	}
+	if _, ok := first["ts"].(string); !ok {
+		t.Fatalf("expected timestamp string, got %T", first["ts"])
+	}
+	second := map[string]any{}
+	if err := dec.Decode(&second); err != nil {
+		t.Fatalf("decode second event: %v", err)
+	}
+	if second["message"] != "plain message" {
+		t.Fatalf("unexpected second message: %v", second["message"])
+	}
+	if second["level"] != "info" {
+		t.Fatalf("unexpected level: %v", second["level"])
+	}
+}
+
+func TestConfigLoggerReuse(t *testing.T) {
+	cfg := &Config{JSONLogs: true}
+	logger := cfg.log()
+	if logger == nil {
+		t.Fatalf("expected logger instance")
+	}
+	if logger != cfg.log() {
+		t.Fatalf("expected cached logger instance")
 	}
 }
 
