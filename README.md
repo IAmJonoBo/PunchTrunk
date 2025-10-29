@@ -11,6 +11,7 @@ A lightweight CLI + CI setup that:
 
 > Status: starter kit. Designed to be hermetic, fast, and agent-friendly.
 > Rebranding note: formerly `trunk-orchestrator`, now published as **PunchTrunk** to reflect the broader workflow focus.
+> Ownership: **n00tropic** maintains the software; PunchTrunk is the name of the orchestrator binary.
 
 ---
 

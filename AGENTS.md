@@ -3,6 +3,7 @@
 ## Repo At A Glance
 
 - Purpose: thin Go CLI that wraps `trunk fmt`, `trunk check`, and hotspot scoring so linters stay fast and hermetic.
+- Ownership: maintained by **n00tropic**; PunchTrunk refers to the CLI binary.
 - Primary entrypoint: `cmd/punchtrunk/main.go` (single binary, no subpackages).
 - Outputs: writes hotspot SARIF to `reports/hotspots.sarif` for GitHub Code Scanning.
 - Core configs: `.trunk/trunk.yaml` plus overrides in `.trunk/configs/`; Make targets in `Makefile` mirror common flows.

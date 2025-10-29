@@ -5,6 +5,7 @@
 PunchTrunk bundles Trunk CLI operations and hotspot analysis inside a single Go binary. The orchestrator keeps formatter and linter execution hermetic while emitting SARIF so CI pipelines stay simple.
 
 > Rebranding: older materials may reference `trunk-orchestrator`; the binary, Docker tags, and documentation now use the PunchTrunk name.
+> Ownership: the project is authored and maintained by **n00tropic**; PunchTrunk is the tool, not the company.
 
 ## Architecture at a Glance
 
@@ -32,6 +33,11 @@ PunchTrunk bundles Trunk CLI operations and hotspot analysis inside a single Go 
 - `docs/hotspots-methodology.md` for scoring details.
 - `docs/trunk-config.md` for linters and runtime pinning.
 - `docs/operations/ci.md` for pipeline integration.
+- `docs/ai/` for agent guardrails, evaluation plans, and Copilot usage.
+- `docs/development/` for coding standards and toolchain links.
+- `docs/delivery/` for release and CI summaries backed by the core guides above.
+- `docs/quality/` for QA checklists and quality gates.
+- `docs/templates/` for ADR, RFC, postmortem, and agent evaluation templates.
 
 ## Ongoing Maintenance
 
