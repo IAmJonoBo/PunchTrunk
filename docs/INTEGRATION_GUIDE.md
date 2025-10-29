@@ -440,6 +440,34 @@ export PUNCHTRUNK_AIRGAPPED=1
 ${PUNCHTRUNK_HOME}/bin/punchtrunk --mode hotspots --base-branch HEAD~1 --trunk-binary "${PUNCHTRUNK_TRUNK_BINARY}"
 ```
 
+### Provision with setup scripts
+
+The repository ships helper scripts that unpack the offline bundle, create stable symlinks/wrappers, wire cache directories, and emit reusable environment exports.
+
+#### Linux/macOS
+
+```bash
+./scripts/setup-airgap.sh \
+  --bundle /path/to/punchtrunk-offline-linux-amd64.tar.gz \
+  --install-dir /opt/punchtrunk \
+  --force
+
+source /opt/punchtrunk/punchtrunk-airgap.env
+```
+
+#### Windows (PowerShell 7+)
+
+```powershell
+pwsh ./scripts/setup-airgap.ps1 `
+  -BundlePath C:\Artifacts\punchtrunk-offline-windows-amd64.tar.gz `
+  -InstallDir "C:\ProgramData\PunchTrunk" `
+  -Force
+
+. "C:\ProgramData\PunchTrunk\punchtrunk-airgap.ps1"
+```
+
+Both scripts validate optional checksum files, lay down cache directories, and print the locations of wrapper binaries (`punchtrunk.cmd`, `trunk.cmd`) alongside the environment export file.
+
 ### Validate the air-gapped setup
 
 Before sealing network access, run PunchTrunk's diagnostic mode to confirm prerequisites:

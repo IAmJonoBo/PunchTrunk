@@ -184,7 +184,8 @@ PUNCHTRUNK_AIRGAPPED=1 ./bin/punchtrunk --mode lint --trunk-binary=/opt/trunk/bi
 - Cached installs created by PunchTrunk live under `~/.trunk/bin`; reuse that path for future jobs if you pre-bake the toolchain.
 - When the workspace is read-only, hotspot SARIF output automatically falls back to `/tmp/punchtrunk/reports/<file>` and a log line explains the redirect.
 - Build an offline bootstrap bundle with `make offline-bundle` (or `./scripts/build-offline-bundle.sh` for custom paths). The archive contains the PunchTrunk binary, a Trunk CLI executable, `.trunk` config, optional cached toolchain artifacts, a manifest, and SHA-256 checksums so air-gapped agents can verify integrity.
-- See `docs/INTEGRATION_GUIDE.md` for a step-by-step walkthrough on verifying the bundle and wiring environment variables before running PunchTrunk in sealed networks.
+- Use `scripts/setup-airgap.sh` (Linux/macOS) or `scripts/setup-airgap.ps1` (Windows) to unpack the bundle, create stable symlinks/wrappers, wire caches, and emit an env file you can source in provisioning jobs.
+- See `docs/INTEGRATION_GUIDE.md` for a step-by-step walkthrough on verifying the bundle, running the setup scripts, and wiring environment variables before running PunchTrunk in sealed networks.
 
 ### Diagnose offline readiness
 
@@ -279,6 +280,9 @@ go test -v ./cmd/punchtrunk -run "TestE2E"
 
 # Kitchen sink test (comprehensive validation)
 go test -v ./cmd/punchtrunk -run "TestE2EKitchenSink"
+
+# Provisioning scripts
+bats scripts/tests
 ```
 
 See [Testing Strategy](docs/testing-strategy.md) for details.

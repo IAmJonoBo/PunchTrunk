@@ -20,6 +20,11 @@ lint:
 
 test:
 	go test -v ./...
+	@if command -v bats >/dev/null 2>&1; then \
+		bats scripts/tests; \
+	else \
+		echo "bats not found; skipping shell tests" >&2; \
+	fi
 
 hotspots: build
 	$(BIN) --mode hotspots
