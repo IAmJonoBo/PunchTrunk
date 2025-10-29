@@ -22,17 +22,17 @@ Quality gates apply to every roadmap item:
 
 ## Near-Term Deliverables (Q4 FY25)
 
-1. **Offline Bootstrap Bundle**
+1. ✅ **Offline Bootstrap Bundle**
 
-- Description: ship a tarball containing PunchTrunk, pinned Trunk CLI, minimal `.trunk` cache, and verification checksums.
-- Tests: add installation E2E that unpacks bundle into temp dir and runs PunchTrunk with `PUNCHTRUNK_AIRGAPPED=1`.
-- Quality gate notes: ensure bundle build step is reproducible in CI.
+- Shipped: Oct 2025. `scripts/build-offline-bundle.sh` now produces verified archives bundling PunchTrunk, Trunk CLI, `.trunk` config, and optional cache to unblock sealed runners.
+- Tests: `TestOfflineBundleSupportsAirgappedHotspots` in `cmd/punchtrunk/main_test.go` builds the bundle, unpacks it, and runs hotspots with `PUNCHTRUNK_AIRGAPPED=1`.
+- Docs: README and `docs/INTEGRATION_GUIDE.md` document archive creation, verification, and usage steps for offline agents.
 
-1. **`punchtrunk --diagnose-airgap` Command**
+1. ✅ **`punchtrunk --diagnose-airgap` Command**
 
-- Description: new mode performing PATH checks, binary validation, write-permission probe, and recommended fixes.
-- Tests: table-driven unit tests for diagnostics plus golden output fixtures.
-- Quality gate notes: wire JSON snapshot tests to prevent regressions.
+- Shipped: Aug 2025. Provides JSON diagnostics covering git availability, trunk binaries, airgap env vars, and SARIF writability.
+- Tests: `TestDiagnoseAirgapHappyPath` and `TestDiagnoseAirgapDetectsMissingTrunk` in `cmd/punchtrunk/main_test.go` validate success/failure cases.
+- Docs: README + agent guides reference the mode; outputs integrate with structured logging.
 
 1. ✅ **JSON Logging Toggle (`--json-logs`)**
 
@@ -40,11 +40,11 @@ Quality gates apply to every roadmap item:
 - Tests: `cmd/punchtrunk/main_test.go` validates JSON log shape and logger reuse.
 - Docs: README updated with flag/env guidance; schema captured in `docs/logging.md`.
 
-1. **Configurable Temp Directory (`--tmp-dir`)**
+1. ✅ **Configurable Temp Directory (`--tmp-dir`)**
 
-- Description: allow overriding default `/tmp` fallback for SARIF and installer staging; auto-create directories.
-- Tests: new E2E that runs hotspots on read-only workspace with custom tmp dir.
-- Quality gate notes: update agent docs and ensure flag integrates with diagnose output.
+- Shipped: Oct 2025. CLI flag/env override directs SARIF fallbacks and installer staging to custom locations; integrates with diagnose checks.
+- Tests: `TestRunHotspotsUsesCustomTmpDirFallback` and `TestConfigResolveTmpDirRelative` cover runtime behaviour and path resolution.
+- Docs: README documents the flag and `PUNCHTRUNK_TMP_DIR`; diagnose output recommendations now mention the override.
 
 ---
 

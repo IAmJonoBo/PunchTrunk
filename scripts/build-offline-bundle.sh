@@ -187,7 +187,7 @@ cat >"$manifest_path" <<EOF
   "created_at": "${created_at}",
   "punchtrunk_binary": "$(basename "$PUNCHTRUNK_BINARY")",
   "trunk_binary": "$(basename "$TRUNK_BINARY")",
-    "trunk_version": "${trunk_version}",
+  "trunk_version": "${trunk_version}",
   "cache_included": ${CACHE_INCLUDED},
   "config_relative_path": "trunk/config",
   "cache_relative_path": "trunk/cache"

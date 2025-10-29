@@ -183,6 +183,8 @@ PUNCHTRUNK_AIRGAPPED=1 ./bin/punchtrunk --mode lint --trunk-binary=/opt/trunk/bi
 - Supply the executable explicitly with `--trunk-binary=/path/to/trunk` or `PUNCHTRUNK_TRUNK_BINARY=/path/to/trunk`. The path is validated for existence and executability before any Trunk command is executed.
 - Cached installs created by PunchTrunk live under `~/.trunk/bin`; reuse that path for future jobs if you pre-bake the toolchain.
 - When the workspace is read-only, hotspot SARIF output automatically falls back to `/tmp/punchtrunk/reports/<file>` and a log line explains the redirect.
+- Build an offline bootstrap bundle with `make offline-bundle` (or `./scripts/build-offline-bundle.sh` for custom paths). The archive contains the PunchTrunk binary, a Trunk CLI executable, `.trunk` config, optional cached toolchain artifacts, a manifest, and SHA-256 checksums so air-gapped agents can verify integrity.
+- See `docs/INTEGRATION_GUIDE.md` for a step-by-step walkthrough on verifying the bundle and wiring environment variables before running PunchTrunk in sealed networks.
 
 ### Diagnose offline readiness
 
