@@ -9,6 +9,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"runtime"
+	"slices"
 	"strings"
 	"testing"
 	"time"
@@ -141,6 +142,95 @@ func TestEnsureEnvironmentAirgappedWithBinary(t *testing.T) {
 	expected := filepath.Join(toolDir, trunkExecutableName())
 	if cfg.TrunkPath != expected {
 		t.Fatalf("expected trunk path %s, got %s", expected, cfg.TrunkPath)
+	}
+}
+
+func TestBuildDryRunPlan(t *testing.T) {
+	stubDir := t.TempDir()
+	stub := makeTrunkStub(t, stubDir)
+	cfg := &Config{
+		Modes:          []string{"fmt", "lint"},
+		Autofix:        "all",
+		SarifOut:       "reports/hotspots.sarif",
+		TrunkArgs:      []string{"--filter=tool:eslint"},
+		TrunkConfigDir: "/tmp/trunk",
+		TrunkBinary:    stub,
+	}
+	plan, err := buildDryRunPlan(cfg)
+	if err != nil {
+		t.Fatalf("buildDryRunPlan: %v", err)
+	}
+	if plan.Trunk.Status != "available" {
+		t.Fatalf("expected trunk status available, got %s", plan.Trunk.Status)
+	}
+	resolvedStub, _ := filepath.Abs(stub)
+	if plan.Trunk.Path != resolvedStub {
+		t.Fatalf("expected trunk path %s, got %s", resolvedStub, plan.Trunk.Path)
+	}
+	if len(plan.Modes) != 2 {
+		t.Fatalf("expected 2 modes, got %d", len(plan.Modes))
+	}
+	fmtMode := plan.Modes[0]
+	if fmtMode.Name != "fmt" {
+		t.Fatalf("expected first mode fmt, got %s", fmtMode.Name)
+	}
+	lintMode := plan.Modes[1]
+	if lintMode.Name != "lint" {
+		t.Fatalf("expected second mode lint, got %s", lintMode.Name)
+	}
+	if !slices.Contains(lintMode.Command, "--fix") {
+		t.Fatalf("expected lint command to include --fix, got %v", lintMode.Command)
+	}
+}
+
+func TestBuildDryRunPlanMissingBinary(t *testing.T) {
+	t.Setenv("PATH", t.TempDir())
+	cfg := &Config{Modes: []string{"fmt"}}
+	plan, err := buildDryRunPlan(cfg)
+	if err != nil {
+		t.Fatalf("buildDryRunPlan: %v", err)
+	}
+	if plan.Trunk.Status != "missing" {
+		t.Fatalf("expected trunk status missing, got %s", plan.Trunk.Status)
+	}
+	if !plan.Trunk.AutoInstall {
+		t.Fatalf("expected plan to attempt auto-install when trunk missing")
+	}
+}
+
+func TestDryRunCLI(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("dry-run CLI test relies on POSIX shell script stub")
+	}
+	root := repoRoot(t)
+	binDir := t.TempDir()
+	binary := filepath.Join(binDir, "punchtrunk")
+	build := exec.Command("go", "build", "-o", binary, "./cmd/punchtrunk")
+	build.Dir = root
+	build.Env = append(os.Environ(), "CGO_ENABLED=0")
+	if out, err := build.CombinedOutput(); err != nil {
+		t.Fatalf("go build punchtrunk: %v\n%s", err, out)
+	}
+	trunkDir := t.TempDir()
+	trunkStub := makeTrunkStub(t, trunkDir)
+	cmd := exec.Command(binary,
+		"--dry-run",
+		"--mode", "fmt,lint",
+		"--autofix", "all",
+		"--trunk-binary", trunkStub,
+		"--trunk-arg=--filter=tool:eslint",
+	)
+	cmd.Dir = root
+	out, err := cmd.CombinedOutput()
+	if err != nil {
+		t.Fatalf("dry-run command failed: %v\n%s", err, out)
+	}
+	output := string(out)
+	if !strings.Contains(output, "--fix") {
+		t.Fatalf("expected output to mention --fix, got %s", output)
+	}
+	if !strings.Contains(output, "No commands executed because --dry-run is enabled") {
+		t.Fatalf("expected output to mention no commands executed, got %s", output)
 	}
 }
 
@@ -671,6 +761,22 @@ func prepareToolchainDir(t *testing.T, includeTrunk bool) string {
 		}
 	}
 	return dir
+}
+
+func makeTrunkStub(t *testing.T, dir string) string {
+	t.Helper()
+	if err := os.MkdirAll(dir, 0o755); err != nil {
+		t.Fatalf("mkdir trunk stub dir: %v", err)
+	}
+	stub := filepath.Join(dir, trunkExecutableName())
+	script := "#!/bin/sh\nexit 0\n"
+	if runtime.GOOS == "windows" {
+		script = "@echo off\r\nexit /B 0\r\n"
+	}
+	if err := os.WriteFile(stub, []byte(script), 0o755); err != nil {
+		t.Fatalf("write trunk stub: %v", err)
+	}
+	return stub
 }
 
 // TestMeanStd validates statistical helper functions.

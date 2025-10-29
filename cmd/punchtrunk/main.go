@@ -157,6 +157,7 @@ type Config struct {
 	SarifOut       string
 	Verbose        bool
 	JSONLogs       bool
+	DryRun         bool
 	TmpDir         string
 	ShowVersion    bool
 	TrunkPath      string
@@ -175,6 +176,13 @@ func main() {
 
 	if cfg.ShowVersion {
 		fmt.Printf("PunchTrunk version %s\n", Version)
+		return
+	}
+
+	if cfg.DryRun {
+		if err := executeDryRun(cfg); err != nil {
+			cfg.log().Fatalf("dry-run failed: %v", err)
+		}
 		return
 	}
 
@@ -353,6 +361,7 @@ func parseFlags() *Config {
 	var sarifOut string
 	var verbose bool
 	var jsonLogs bool
+	var dryRun bool
 	var tmpDir string
 	var autofix string
 	var version bool
@@ -367,6 +376,7 @@ func parseFlags() *Config {
 	flag.StringVar(&sarifOut, "sarif-out", "reports/hotspots.sarif", "SARIF output path for hotspots")
 	flag.BoolVar(&verbose, "verbose", false, "Verbose logs")
 	flag.BoolVar(&jsonLogs, "json-logs", false, "Emit structured JSON logs")
+	flag.BoolVar(&dryRun, "dry-run", false, "Preview planned commands without executing them")
 	flag.StringVar(&tmpDir, "tmp-dir", "", "Override temporary directory PunchTrunk uses for fallbacks and installers")
 	flag.BoolVar(&version, "version", false, "Show version and exit")
 	flag.StringVar(&trunkConfigDir, "trunk-config-dir", "", "Override Trunk config directory (defaults to repo autodetect)")
@@ -412,6 +422,7 @@ func parseFlags() *Config {
 		SarifOut:       filepath.Clean(sarifOut),
 		Verbose:        verbose,
 		JSONLogs:       jsonLogs,
+		DryRun:         dryRun,
 		TmpDir:         strings.TrimSpace(tmpDir),
 		ShowVersion:    version,
 		TrunkConfigDir: trunkConfigDir,
@@ -439,8 +450,40 @@ func splitCSV(s string) []string {
 	return out
 }
 
+func trunkFmtArgs(cfg *Config) []string {
+	args := []string{"fmt"}
+	if cfg != nil {
+		args = append(args, cfg.TrunkArgs...)
+	}
+	return args
+}
+
+func trunkCheckArgs(cfg *Config) []string {
+	args := []string{"check"}
+	scope := ""
+	if cfg != nil {
+		scope = cfg.Autofix
+	}
+	switch scope {
+	case "all":
+		args = append(args, "--fix")
+	case "lint":
+		args = append(args, "--fix")
+	case "fmt":
+		// default path: no extra flag
+	case "none":
+		// no autofix
+	default:
+		// treat unknown as none
+	}
+	if cfg != nil {
+		args = append(args, cfg.TrunkArgs...)
+	}
+	return args
+}
+
 func runTrunkFmt(ctx context.Context, cfg *Config) error {
-	args := append([]string{"fmt"}, cfg.TrunkArgs...)
+	args := trunkFmtArgs(cfg)
 	cmd := exec.CommandContext(ctx, cfg.trunkBinary(), args...)
 	cmd.Stdout = os.Stdout
 	cmd.Stderr = os.Stderr
@@ -453,23 +496,7 @@ func runTrunkFmt(ctx context.Context, cfg *Config) error {
 }
 
 func runTrunkCheck(ctx context.Context, cfg *Config) error {
-	args := []string{"check"}
-	// Decide autofix scope
-	switch cfg.Autofix {
-	case "all":
-		args = append(args, "--fix")
-	case "lint":
-		// Trunk doesn't have "lint-only fix", so we still pass --fix.
-		// Users should configure which linters have fix enabled in trunk.yaml.
-		args = append(args, "--fix")
-	case "fmt":
-		// Default path: we already ran fmt() so here we avoid --fix.
-	case "none":
-		// no-op
-	default:
-		// unknown -> none
-	}
-	args = append(args, cfg.TrunkArgs...)
+	args := trunkCheckArgs(cfg)
 	// Let trunk decide changed files via hold-the-line; base branch is read from trunk.yaml.
 	cmd := exec.CommandContext(ctx, cfg.trunkBinary(), args...)
 	cmd.Stdout = os.Stdout
@@ -586,6 +613,236 @@ func maybeWarnCompetingTools(mode string, cfg *Config) {
 		}
 		conflictMu.Unlock()
 	}
+}
+
+func executeDryRun(cfg *Config) error {
+	plan, err := buildDryRunPlan(cfg)
+	if err != nil {
+		return err
+	}
+	cfg.log().Event("info", "dryrun.plan", LogFields{
+		"mode_count":   len(plan.Modes),
+		"trunk_status": plan.Trunk.Status,
+		"auto_install": plan.Trunk.AutoInstall,
+	})
+	plan.Print(os.Stdout)
+	return nil
+}
+
+type dryRunPlan struct {
+	Trunk     dryRunTrunk
+	Env       []string
+	TrunkArgs []string
+	SarifOut  string
+	Modes     []dryRunMode
+	Warnings  []string
+	Notes     []string
+}
+
+type dryRunTrunk struct {
+	Path        string
+	Source      string
+	Status      string
+	AutoInstall bool
+	Airgapped   bool
+}
+
+type dryRunMode struct {
+	Name        string
+	Command     []string
+	Description string
+}
+
+func buildDryRunPlan(cfg *Config) (*dryRunPlan, error) {
+	if cfg == nil {
+		cfg = &Config{}
+	}
+	plan := &dryRunPlan{
+		SarifOut:  cfg.SarifOut,
+		TrunkArgs: append([]string(nil), cfg.TrunkArgs...),
+	}
+	if cfg.TrunkConfigDir != "" {
+		plan.Env = append(plan.Env, fmt.Sprintf("TRUNK_CONFIG_DIR=%s", cfg.TrunkConfigDir))
+	}
+	trunkInfo, warnings := resolveDryRunTrunk(cfg)
+	plan.Trunk = trunkInfo
+	plan.Warnings = append(plan.Warnings, warnings...)
+	modes := cfg.Modes
+	if len(modes) == 0 {
+		modes = []string{"fmt", "lint", "hotspots"}
+	}
+	for _, raw := range modes {
+		mode := strings.TrimSpace(strings.ToLower(raw))
+		if mode == "" {
+			continue
+		}
+		modePlan := dryRunMode{Name: mode}
+		switch mode {
+		case "fmt":
+			args := trunkFmtArgs(cfg)
+			modePlan.Command = prependCommand(plan.Trunk.displayCommand(), args)
+			modePlan.Description = "format code via trunk fmt"
+		case "lint":
+			args := trunkCheckArgs(cfg)
+			modePlan.Command = prependCommand(plan.Trunk.displayCommand(), args)
+			modePlan.Description = "run trunk lint checks"
+		case "hotspots":
+			if strings.TrimSpace(cfg.SarifOut) != "" {
+				modePlan.Description = fmt.Sprintf("compute hotspots and write SARIF to %s", cfg.SarifOut)
+			} else {
+				modePlan.Description = "compute hotspots (no SARIF destination configured)"
+			}
+		case "diagnose-airgap":
+			modePlan.Command = []string{"punchtrunk", "--mode", "diagnose-airgap"}
+			modePlan.Description = "emit JSON diagnostics about offline readiness"
+		default:
+			modePlan.Description = "mode not recognized; it would be skipped"
+		}
+		plan.Modes = append(plan.Modes, modePlan)
+	}
+	if len(plan.Modes) == 0 {
+		plan.Notes = append(plan.Notes, "No modes were selected; nothing would run.")
+	}
+	plan.Notes = append(plan.Notes, "No commands executed because --dry-run is enabled.")
+	return plan, nil
+}
+
+func resolveDryRunTrunk(cfg *Config) (dryRunTrunk, []string) {
+	info := dryRunTrunk{
+		Status:    "missing",
+		Airgapped: airgapMode(),
+	}
+	var warnings []string
+	seen := map[string]struct{}{}
+	try := func(raw, source string) bool {
+		if raw == "" {
+			return false
+		}
+		if _, ok := seen[raw]; ok {
+			return false
+		}
+		seen[raw] = struct{}{}
+		resolved, err := resolveTrunkBinary(raw)
+		if err != nil {
+			warnings = append(warnings, fmt.Sprintf("%s %s is invalid: %v", source, raw, err))
+			return false
+		}
+		info.Path = resolved
+		info.Source = source
+		info.Status = "available"
+		return true
+	}
+	if cfg != nil && try(cfg.TrunkBinary, "--trunk-binary") {
+		return info, warnings
+	}
+	if env := strings.TrimSpace(os.Getenv("PUNCHTRUNK_TRUNK_BINARY")); try(env, "PUNCHTRUNK_TRUNK_BINARY") {
+		return info, warnings
+	}
+	if path, err := exec.LookPath(trunkExecutableName()); err == nil {
+		if try(path, "PATH") {
+			return info, warnings
+		}
+	}
+	if home, err := os.UserHomeDir(); err == nil {
+		candidate := filepath.Join(home, ".trunk", "bin", trunkExecutableName())
+		if try(candidate, "~/.trunk/bin") {
+			return info, warnings
+		}
+	}
+	if !info.Airgapped {
+		info.AutoInstall = true
+	}
+	return info, warnings
+}
+
+func (p *dryRunPlan) Print(w io.Writer) {
+	if p == nil {
+		return
+	}
+	if w == nil {
+		w = os.Stdout
+	}
+	fmt.Fprintln(w, "Dry run summary (no commands executed)")
+	fmt.Fprintln(w)
+	fmt.Fprintf(w, "Trunk binary: %s\n", p.Trunk.summary())
+	if len(p.Env) > 0 {
+		fmt.Fprintln(w, "Environment exports:")
+		for _, kv := range p.Env {
+			fmt.Fprintf(w, "  %s\n", kv)
+		}
+	}
+	if len(p.TrunkArgs) > 0 {
+		fmt.Fprintf(w, "Additional trunk arguments: %s\n", strings.Join(p.TrunkArgs, ", "))
+	}
+	if strings.TrimSpace(p.SarifOut) != "" {
+		fmt.Fprintf(w, "SARIF output path: %s\n", p.SarifOut)
+	}
+	if len(p.Modes) > 0 {
+		fmt.Fprintln(w, "Planned modes:")
+		for idx, mode := range p.Modes {
+			line := fmt.Sprintf("  %d. %s", idx+1, mode.Name)
+			if len(mode.Command) > 0 {
+				line = fmt.Sprintf("%s -> %s", line, strings.Join(mode.Command, " "))
+			}
+			fmt.Fprintln(w, line)
+			if mode.Description != "" {
+				fmt.Fprintf(w, "     %s\n", mode.Description)
+			}
+		}
+	} else {
+		fmt.Fprintln(w, "Planned modes: none")
+	}
+	if len(p.Warnings) > 0 {
+		fmt.Fprintln(w)
+		fmt.Fprintln(w, "Warnings:")
+		for _, warn := range p.Warnings {
+			fmt.Fprintf(w, "  - %s\n", warn)
+		}
+	}
+	if len(p.Notes) > 0 {
+		fmt.Fprintln(w)
+		fmt.Fprintln(w, "Notes:")
+		for _, note := range p.Notes {
+			fmt.Fprintf(w, "  - %s\n", note)
+		}
+	}
+}
+
+func (t dryRunTrunk) summary() string {
+	if t.Status == "available" {
+		path := t.Path
+		if path == "" {
+			path = trunkExecutableName()
+		}
+		if t.Source != "" {
+			return fmt.Sprintf("%s (source: %s)", path, t.Source)
+		}
+		return path
+	}
+	if t.AutoInstall {
+		return "not detected; PunchTrunk would attempt to auto-install trunk"
+	}
+	if t.Airgapped {
+		return "not detected; provide --trunk-binary or PUNCHTRUNK_TRUNK_BINARY when running offline"
+	}
+	return "not detected"
+}
+
+func (t dryRunTrunk) displayCommand() string {
+	if t.Path != "" {
+		return t.Path
+	}
+	return trunkExecutableName()
+}
+
+func prependCommand(command string, args []string) []string {
+	out := make([]string, 0, 1+len(args))
+	if command == "" {
+		command = trunkExecutableName()
+	}
+	out = append(out, command)
+	out = append(out, args...)
+	return out
 }
 
 func detectCompetingToolConfigs(mode string) []string {
