@@ -6,3 +6,5 @@
 - Trunk and formatter configuration: `../trunk-config.md`
 - Security posture during setup: `../security-supply-chain.md`
 - IDE tips and AI guardrails: `../ai/COPILOT_USAGE.md`
+- Docker build + runtime details: `../releasing.md` (packaging steps) and `Dockerfile` walkthrough.
+- Troubleshooting caches and tool versions: `../operations/ci.md` (Cache section) and `Makefile` targets `build`, `run`, `hotspots`.

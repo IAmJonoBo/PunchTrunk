@@ -2,15 +2,17 @@
 
 ## Metrics
 
-- Quality: pass@k, task success rate, regression deltas.
-- Safety: hallucination rate, policy violations.
-- Efficiency: latency, token/cost budgets.
+- **Quality:** Validate SARIF schema with `sarif-tools validate`; measure hotspot ranking stability against golden datasets using Spearman ρ ≥ 0.9; track Trunk hold-the-line violations per PR.
+- **Safety:** Ensure secrets detection catches seeded secrets (0 false negatives) and AI-assisted PRs document assistance per `.github/copilot-instructions.md`.
+- **Efficiency:** CI runtime p95 for fmt+lint+hotspots <10 minutes; hotspot computation ≤2 minutes for large repos.
 
 ## Datasets & protocol
 
-- Gold‑set curation, periodic refresh, holdout policy.
-- Review cadence and sign‑off gates before release.
+- Maintain synthetic repositories with known churn patterns and seeded hotspots; refresh quarterly to keep language coverage current.
+- Store baseline SARIF fixtures under `testdata/sarif/*.json`; compare new runs via JSON diff to identify regressions.
+- Require platform maintainer sign-off when metrics dip below thresholds before release or dependency upgrades.
 
 ## Automation
 
-- CI job to run eval suites; block on regressions beyond threshold.
+- Add `make eval-hotspots` target executing hotspot scoring against fixtures and validating SARIF output with `jq` and `sarif-tools`.
+- Extend CI with optional nightly workflow to run evaluation suite; fail PRs introducing regressions (e.g., ranking correlation <0.9 or runtime >20% increase).

@@ -2,15 +2,15 @@
 
 ## Highlights
 
-- …
+- <Headline summary of the most important improvements.>
 
 ## Changes
 
-- feat: …
-- fix: …
-- perf: …
-- chore: …
+- feat: <Feature-level changes>
+- fix: <Bug fixes>
+- perf: <Performance improvements>
+- chore: <Tooling/docs/dependency updates>
 
 ## Migrations / Breaking changes
 
-- …
+- <Required manual steps or backwards-incompatible notes.>
