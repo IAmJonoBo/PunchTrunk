@@ -1,6 +1,7 @@
 # Trunk Orchestrator (polyglot, ephemeral-friendly)
 
 A lightweight CLI + CI setup that:
+
 - Runs **Trunk** across your repo for linting and formatting
 - Applies **safe autofixes** (formatters by default; linters optional)
 - Surfaces **hotspots** (git churn × complexity) to guide attention
@@ -69,6 +70,7 @@ Flags:
 ```
 
 **Examples**
+
 ```bash
 # Fast pre-commit run on changed files
 ./bin/trunk-orchestrator --mode fmt,lint
@@ -95,11 +97,13 @@ See `.github/workflows/ci.yml`.
 ## Configuring Trunk
 
 The orchestrator honours `.trunk/trunk.yaml`. This repo includes a minimal seed which:
+
 - Pins the Trunk CLI version
 - Sets `trunk_branch` to `main` (change for your repo)
 - Enables common formatters/linters (you can extend this)
 
 Docs:
+
 - Hold-the-line & base branch: https://docs.trunk.io/code-quality/setup-and-installation/prevent-new-issues
 - `trunk check` / `trunk fmt`: https://docs.trunk.io/code-quality/linters/run-linters
 
@@ -123,6 +127,7 @@ This is a heuristic to prioritise attention, inspired by defect prediction liter
 - Pin Trunk CLI version in `.trunk/trunk.yaml` for reproducibility.
 
 References:
+
 - Distroless images: https://github.com/GoogleContainerTools/distroless
 - Docker doc on distroless: https://docs.docker.com/dhi/core-concepts/distroless/
 - Cosign: https://github.com/sigstore/cosign
@@ -139,8 +144,8 @@ References:
 
 ## Troubleshooting
 
-- **No issues appearing?** Trunk uses hold-the-line; run `trunk check --all` locally or push a change. 
-- **Slow cold starts in CI?** Ensure caches are restoring; check cache key inputs (lockfiles, `.trunk` state). 
+- **No issues appearing?** Trunk uses hold-the-line; run `trunk check --all` locally or push a change.
+- **Slow cold starts in CI?** Ensure caches are restoring; check cache key inputs (lockfiles, `.trunk` state).
 - **Autofix surprises?** Set `--autofix=none` in CI and rely on inline annotations.
 
 ---
