@@ -34,7 +34,7 @@
 
 ## Distribution & Extensions
 
-- `scripts/build-offline-bundle.sh` produces archives (`punchtrunk-offline-<os>-<arch>.tar.gz`) that embed PunchTrunk, a pinned Trunk CLI, `.trunk` configs, cached toolchains, and helper env scripts; it now hydrates caches via `trunk fmt --fetch` / `trunk check --fetch` by default, captures the CLI version + config checksum in `manifest.json`, and supports `--skip-hydrate` when you need to package an empty cache. Use `scripts/setup-airgap.*` to install bundles on runners.
+- `scripts/build-offline-bundle.sh` produces archives (`punchtrunk-offline-<os>-<arch>.tar.gz`) that embed PunchTrunk, a pinned Trunk CLI, `.trunk` configs, cached toolchains, and helper env scripts; it now hydrates caches via `trunk install --ci` by default, captures the CLI version + config checksum in `manifest.json`, and supports `--skip-hydrate` when you need to package an empty cache. Use `scripts/setup-airgap.*` to install bundles on runners.
 - `scripts/install.sh` downloads release artifacts (`punchtrunk-<os>-<arch>`), optionally verifies checksums, and sets up `/usr/local/bin`; keep filenames stable for installers and bundle manifests.
 - Optional Semgrep rules live in `semgrep/`; wire them into `.trunk/trunk.yaml` if you expand lint coverage.
 - Release signing is expected via cosign; update install docs and bundle manifests if distribution changes.

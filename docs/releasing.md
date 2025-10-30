@@ -40,7 +40,7 @@ Deliver reproducible `PunchTrunk` binaries and offline bundles with minimal manu
    ls dist/punchtrunk-offline-*.tar.gz
    ```
 
-   - Builder hydrates Trunk caches via `trunk fmt --fetch` / `trunk check --fetch` by default; pass `--skip-hydrate` only when you intentionally want an empty cache.
+   - Builder hydrates Trunk caches via `trunk install --ci` by default; pass `--skip-hydrate` only when you intentionally want an empty cache.
    - Verify the archive contains `punchtrunk-airgap.env`, `trunk/`, and checksums.
    - Inspect `manifest.json` for the expected `trunk_cli_version`, `trunk_config_sha256`, and `hydrate_status` values.
    - Source the bundle env file and run `punchtrunk --mode tool-health` to confirm pinned runtimes/linters are available offline.

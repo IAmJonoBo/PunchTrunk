@@ -17,7 +17,7 @@
 - Typical local run: `./bin/punchtrunk --mode fmt,lint,hotspots --base-branch=origin/main`. Pin to an existing Trunk setup with `--trunk-config-dir=/path/to/.trunk` and forward filters (e.g. `--trunk-arg=--filter=tool:eslint`) when another formatter/linter already covers the same files. For hotspots-only parity use `make hotspots` after a build.
 - Trunk configuration lives in `.trunk/trunk.yaml`; extend linters there and mirror overrides under `.trunk/configs/` to stay hermetic.
 - CI (`.github/workflows/ci.yml`) fetches full history, caches `~/.cache/trunk`, builds with Go 1.25.x, runs `go test -v ./...`, executes hotspots, then uploads `reports/hotspots.sarif` via `codeql-action`.
-- Offline bundles come from `scripts/build-offline-bundle.sh`; the script hydrates caches via `trunk fmt --fetch` / `trunk check --fetch`, captures manifest metadata (CLI version, trunk config checksum, hydration status), and supports `--skip-hydrate` when you intentionally package an empty cache. `scripts/setup-airgap.*` installs bundles and emits reusable env helpers so runners can source `punchtrunk-airgap.env`/`.ps1`.
+- Offline bundles come from `scripts/build-offline-bundle.sh`; the script hydrates caches via `trunk install --ci`, captures manifest metadata (CLI version, trunk config checksum, hydration status), and supports `--skip-hydrate` when you intentionally package an empty cache. `scripts/setup-airgap.*` installs bundles and emits reusable env helpers so runners can source `punchtrunk-airgap.env`/`.ps1`.
 - Agents running on fresh machines need no manual Trunk setup—`ensureEnvironment` will download the installer script from `https://get.trunk.io`, execute it non-interactively, and reuse the cached binary on subsequent runs.
 
 ## Testing & Safety Checks

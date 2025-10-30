@@ -171,7 +171,7 @@ PUNCHTRUNK_AIRGAPPED=1 ./bin/punchtrunk --mode lint --trunk-binary=/opt/trunk/bi
 - Supply the executable explicitly with `--trunk-binary=/path/to/trunk` or `PUNCHTRUNK_TRUNK_BINARY=/path/to/trunk`. The path is validated for existence and executability before any Trunk command is executed.
 - Cached installs created by PunchTrunk live under `~/.trunk/bin`; reuse that path for future jobs if you pre-bake the toolchain.
 - When the workspace is read-only, hotspot SARIF output automatically falls back to `/tmp/punchtrunk/reports/<file>` and a log line explains the redirect.
-- Build an offline bootstrap bundle with `make offline-bundle` (or `./scripts/build-offline-bundle.sh` for custom paths). The script now hydrates the Trunk cache before packaging (failing back to warnings when a fetch is unavailable) and records the CLI version, config checksum, hydration status, and source cache path in `manifest.json`. Pass `--skip-hydrate` to opt out when you intentionally want an empty cache.
+- Build an offline bootstrap bundle with `make offline-bundle` (or `./scripts/build-offline-bundle.sh` for custom paths). The script now runs `trunk install --ci` before packaging (failing back to warnings when downloads are blocked) and records the CLI version, config checksum, hydration status, and source cache path in `manifest.json`. Pass `--skip-hydrate` to opt out when you intentionally want an empty cache.
 - Use `scripts/setup-airgap.sh` (Linux/macOS) or `scripts/setup-airgap.ps1` (Windows) to unpack the bundle, create stable symlinks/wrappers, wire caches, and emit an env file you can source in provisioning jobs.
 - `scripts/build-offline-bundle.sh` accepts `--target-os` and `--target-arch` so you can build archives for any supported platform from a single host, auto-downloading the matching Trunk CLI when not provided.
 - Bundle installs persist under the directory you pass to `setup-airgap.*`; add `$(install-dir)/bin` to `PATH` or source the generated env helper so callers resolve the embedded PunchTrunk and Trunk binaries without extra exports.
@@ -207,7 +207,7 @@ punchtrunk --mode tool-health --tool-health-format summary --tool-health-json re
 ## CI (GitHub Actions)
 
 - Inline annotations via **trunk-io/trunk-action**.
-- `scripts/prep-runner.sh` hydrates Trunk caches, runs `tool-health`, and emits a summary artifact so sealed runners retain context even when fetches fail.
+- `scripts/prep-runner.sh` hydrates Trunk caches, runs `tool-health`, and emits a summary artifact so sealed runners retain context even when downloads are blocked.
 - `scripts/run-quality-suite.sh` wraps the preflight plus a full PunchTrunk run; the integration leg of `e2e.yml` now calls it directly so local agents and CI ingest the same summaries and JSON artifacts.
 - Optional **SARIF upload** for hotspots (`reports/hotspots.sarif`).
 - Ephemeral-friendly caches: Trunk tool cache + Go build cache.

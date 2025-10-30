@@ -306,8 +306,7 @@ if [[ $HYDRATE -eq 1 ]]; then
 		record_hydrate_warning "cache directory $CACHE_DIR could not be created"
 	else
 		hydrate_log=$(mktemp "${TMPDIR:-/tmp}/punchtrunk-hydrate.XXXXXX")
-		run_hydrate_command "trunk fmt --fetch" "$TRUNK_BINARY" fmt --fetch
-		run_hydrate_command "trunk check --fetch" "$TRUNK_BINARY" check --fetch
+		run_hydrate_command "trunk install" "$TRUNK_BINARY" install --ci
 	fi
 fi
 

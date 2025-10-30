@@ -1216,6 +1216,189 @@ func cachePath(base string, parts ...string) string {
 	return filepath.Join(segments...)
 }
 
+func sanitizeCacheComponent(value string) string {
+	value = strings.TrimSpace(value)
+	if value == "" {
+		return ""
+	}
+	var b strings.Builder
+	for _, r := range value {
+		switch {
+		case r >= 'a' && r <= 'z':
+			b.WriteRune(r)
+		case r >= 'A' && r <= 'Z':
+			b.WriteRune(r)
+		case r >= '0' && r <= '9':
+			b.WriteRune(r)
+		case r == '-' || r == '_' || r == '.':
+			b.WriteRune(r)
+		default:
+			b.WriteRune('-')
+		}
+	}
+	return b.String()
+}
+
+func findVersionedCacheEntry(baseDir, version string) (string, bool) {
+	baseDir = strings.TrimSpace(baseDir)
+	version = strings.TrimSpace(version)
+	if baseDir == "" || version == "" {
+		return filepath.Join(baseDir, version), false
+	}
+	entries, err := os.ReadDir(baseDir)
+	if err != nil {
+		candidate := filepath.Join(baseDir, version)
+		return candidate, pathExists(candidate)
+	}
+	for _, entry := range entries {
+		if !entry.IsDir() {
+			continue
+		}
+		name := entry.Name()
+		trimmed := strings.TrimSuffix(name, ".cache")
+		if trimmed == version || strings.HasPrefix(trimmed, version+"-") || strings.HasPrefix(trimmed, version+"_") || strings.HasPrefix(trimmed, version) {
+			return filepath.Join(baseDir, name), true
+		}
+	}
+	candidate := filepath.Join(baseDir, version)
+	return candidate, pathExists(candidate)
+}
+
+func locatePluginCache(cacheDir string, src trunkPluginSource) (string, bool) {
+	cacheDir = strings.TrimSpace(cacheDir)
+	if cacheDir == "" {
+		return "", false
+	}
+	idRaw := strings.TrimSpace(src.ID)
+	ref := strings.TrimSpace(src.Ref)
+	uri := strings.TrimSpace(src.URI)
+	if idRaw == "" || ref == "" {
+		return cachePath(cacheDir, "plugins", sanitizeCacheComponent(idRaw), ref), false
+	}
+	idCandidates := uniqueStrings([]string{
+		idRaw,
+		sanitizeCacheComponent(idRaw),
+		sanitizeCacheComponent(uri),
+		sanitizeCacheComponent(strings.TrimPrefix(strings.TrimPrefix(uri, "https://"), "http://")),
+	})
+	pluginsDir := cachePath(cacheDir, "plugins")
+	var fallback string
+	for _, candidate := range idCandidates {
+		candidate = strings.TrimSpace(candidate)
+		if candidate == "" {
+			continue
+		}
+		idDir := filepath.Join(pluginsDir, candidate)
+		if !pathExists(idDir) {
+			fallback = filepath.Join(idDir, ref)
+			continue
+		}
+		direct := filepath.Join(idDir, ref)
+		if pathExists(direct) {
+			return direct, true
+		}
+		entries, err := os.ReadDir(idDir)
+		if err != nil {
+			fallback = filepath.Join(idDir, ref)
+			continue
+		}
+		for _, entry := range entries {
+			if !entry.IsDir() {
+				continue
+			}
+			name := entry.Name()
+			trimmed := strings.TrimSuffix(name, ".cache")
+			if strings.HasPrefix(trimmed, ref) {
+				return filepath.Join(idDir, name), true
+			}
+		}
+		fallback = filepath.Join(idDir, ref)
+	}
+	if pluginsDir != "" {
+		if pluginEntries, err := os.ReadDir(pluginsDir); err == nil {
+			for _, pluginEntry := range pluginEntries {
+				if !pluginEntry.IsDir() {
+					continue
+				}
+				idDir := filepath.Join(pluginsDir, pluginEntry.Name())
+				subEntries, subErr := os.ReadDir(idDir)
+				if subErr != nil {
+					continue
+				}
+				for _, entry := range subEntries {
+					if !entry.IsDir() {
+						continue
+					}
+					name := entry.Name()
+					trimmed := strings.TrimSuffix(name, ".cache")
+					if strings.HasPrefix(trimmed, ref) {
+						return filepath.Join(idDir, name), true
+					}
+				}
+			}
+		}
+	}
+	if fallback != "" {
+		return fallback, pathExists(fallback)
+	}
+	return cachePath(cacheDir, "plugins", sanitizeCacheComponent(idRaw), ref), false
+}
+
+func locateRuntimeCache(cacheDir, tool, version string) (string, bool) {
+	cacheDir = strings.TrimSpace(cacheDir)
+	tool = strings.TrimSpace(tool)
+	version = strings.TrimSpace(version)
+	if cacheDir == "" || tool == "" || version == "" {
+		return cachePath(cacheDir, "runtimes", tool, version), false
+	}
+	candidates := []string{
+		cachePath(cacheDir, "runtimes", tool),
+		cachePath(cacheDir, "tools", tool),
+	}
+	var fallback string
+	for _, base := range candidates {
+		base = strings.TrimSpace(base)
+		if base == "" {
+			continue
+		}
+		if path, ok := findVersionedCacheEntry(base, version); ok {
+			return path, true
+		}
+		fallback = filepath.Join(base, version)
+	}
+	if fallback != "" {
+		return fallback, pathExists(fallback)
+	}
+	return cachePath(cacheDir, "runtimes", tool, version), false
+}
+
+func locateToolCache(cacheDir, tool, version string) (string, bool) {
+	cacheDir = strings.TrimSpace(cacheDir)
+	tool = strings.TrimSpace(tool)
+	version = strings.TrimSpace(version)
+	if cacheDir == "" || tool == "" {
+		return cachePath(cacheDir, "tools", tool, version), false
+	}
+	if version == "" {
+		base := cachePath(cacheDir, "tools", tool)
+		return base, pathExists(base)
+	}
+	base := cachePath(cacheDir, "tools", tool)
+	if path, ok := findVersionedCacheEntry(base, version); ok {
+		return path, true
+	}
+	candidate := filepath.Join(base, version)
+	if pathExists(candidate) {
+		return candidate, true
+	}
+	if tool == "gofmt" {
+		if runtimePath, ok := locateRuntimeCache(cacheDir, "go", version); ok {
+			return runtimePath, true
+		}
+	}
+	return candidate, false
+}
+
 func detectTrunkVersion(ctx context.Context, trunkPath string) (string, error) {
 	if strings.TrimSpace(trunkPath) == "" {
 		return "", fmt.Errorf("trunk path is empty")
@@ -1484,8 +1667,7 @@ func runToolHealth(ctx context.Context, cfg *Config) error {
 				report.PluginSources = append(report.PluginSources, statusItem)
 				continue
 			} else {
-				cacheEntry = cachePath(cacheDir, "plugins", strings.TrimSpace(src.ID), strings.TrimSpace(src.Ref))
-				hydrated = pathExists(cacheEntry)
+				cacheEntry, hydrated = locatePluginCache(cacheDir, src)
 				if !hydrated {
 					message = "plugin cache not found"
 					warnings = append(warnings, fmt.Sprintf("missing plugin cache for %s (%s)", name, cacheEntry))
@@ -1507,8 +1689,7 @@ func runToolHealth(ctx context.Context, cfg *Config) error {
 				continue
 			}
 			if cacheDir != "" {
-				cacheEntry = cachePath(cacheDir, "runtimes", tool, version)
-				hydrated = pathExists(cacheEntry)
+				cacheEntry, hydrated = locateRuntimeCache(cacheDir, tool, version)
 				if !hydrated {
 					message = "runtime cache not found"
 					warnings = append(warnings, fmt.Sprintf("missing runtime cache %s (%s)", runtimeName, cacheEntry))
@@ -1529,8 +1710,7 @@ func runToolHealth(ctx context.Context, cfg *Config) error {
 				continue
 			}
 			if cacheDir != "" {
-				cacheEntry = cachePath(cacheDir, "tools", tool, version)
-				hydrated = pathExists(cacheEntry)
+				cacheEntry, hydrated = locateToolCache(cacheDir, tool, version)
 				if !hydrated {
 					message = "tool cache not found"
 					warnings = append(warnings, fmt.Sprintf("missing tool cache %s (%s)", lintName, cacheEntry))

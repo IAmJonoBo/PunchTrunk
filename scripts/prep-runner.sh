@@ -199,23 +199,14 @@ else
 		save_env_var "TRUNK_CONFIG_DIR" "$TRUNK_CONFIG_DIR"
 		save_env_var "TRUNK_BINARY" "$TRUNK_BINARY"
 		TRUNK_STATUS="attempted"
-		TRUNK_MESSAGE="Hydrating caches via trunk fmt/check --fetch"
-		if ! "$TRUNK_BINARY" fmt --fetch >/dev/null 2>&1; then
-			append_warning "trunk fmt --fetch failed"
+		TRUNK_MESSAGE="Hydrating caches via trunk install"
+		if ! "$TRUNK_BINARY" install --ci >/dev/null 2>&1; then
+			append_warning "trunk install failed; caches may be incomplete"
 			TRUNK_STATUS="partial"
+			TRUNK_MESSAGE="trunk install failed"
 		else
-			TRUNK_STATUS="partial"
-		fi
-		if ! "$TRUNK_BINARY" check --fetch >/dev/null 2>&1; then
-			append_warning "trunk check --fetch failed"
-			if [[ $TRUNK_STATUS == "attempted" ]]; then
-				TRUNK_STATUS="partial"
-			fi
-		else
-			if [[ $TRUNK_STATUS != "partial" ]]; then
-				TRUNK_STATUS="success"
-				TRUNK_MESSAGE="Trunk caches hydrated"
-			fi
+			TRUNK_STATUS="success"
+			TRUNK_MESSAGE="Trunk caches hydrated"
 		fi
 	fi
 fi

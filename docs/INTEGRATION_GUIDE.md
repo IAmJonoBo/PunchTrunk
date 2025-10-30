@@ -448,7 +448,7 @@ Useful flags include:
 - `--trunk-binary` to reuse a pre-installed Trunk CLI path when building on a staging host.
 - `--cache-dir` to embed an existing `~/.cache/trunk` so linters run without outbound downloads.
 - `--no-cache` to produce a minimal archive when storage is tight.
-- `--skip-hydrate` to disable the default prefetch step (the script issues `trunk fmt --fetch` and `trunk check --fetch` to warm caches when hydration is enabled).
+- `--skip-hydrate` to disable the default prefetch step (the script issues `trunk install --ci` to warm caches when hydration is enabled).
 - `--target-os` / `--target-arch` to fetch the correct Trunk binary for another platform from the same build host.
 - Omitting `--trunk-binary` instructs the script to auto-download the pinned Trunk release that matches `.trunk/trunk.yaml`.
 
