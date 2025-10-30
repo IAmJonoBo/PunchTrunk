@@ -618,6 +618,16 @@ func runHotspots(ctx context.Context, cfg *Config) error {
 			if err := os.MkdirAll(dir, 0o755); err != nil {
 				return fmt.Errorf("create fallback SARIF directory %s: %w", dir, err)
 			}
+		} else if hasReadOnlyAncestor(dir) {
+			fallback, ok := sarifFallbackPath(cfg, cfg.SarifOut, errReadOnlyWorkspace)
+			if ok {
+				cfg.log().Warnf("detected read-only workspace for SARIF directory %s; writing to %s instead", dir, fallback)
+				cfg.SarifOut = fallback
+				dir = filepath.Dir(cfg.SarifOut)
+				if err := os.MkdirAll(dir, 0o755); err != nil {
+					return fmt.Errorf("create fallback SARIF directory %s: %w", dir, err)
+				}
+			}
 		}
 	}
 	if err := writeSARIF(cfg.SarifOut, hs); err != nil {
@@ -629,6 +639,8 @@ func runHotspots(ctx context.Context, cfg *Config) error {
 	})
 	return nil
 }
+
+var errReadOnlyWorkspace = errors.New("read-only workspace detected")
 
 func sarifFallbackPath(cfg *Config, current string, mkdirErr error) (string, bool) {
 	if current == "" {
@@ -651,6 +663,9 @@ func isPermissionOrReadOnly(err error) bool {
 	if err == nil {
 		return false
 	}
+	if errors.Is(err, errReadOnlyWorkspace) {
+		return true
+	}
 	if errors.Is(err, os.ErrPermission) {
 		return true
 	}
@@ -661,6 +676,39 @@ func isPermissionOrReadOnly(err error) bool {
 		}
 	}
 	return strings.Contains(strings.ToLower(err.Error()), "read-only")
+}
+
+func hasReadOnlyAncestor(path string) bool {
+	if path == "" {
+		return false
+	}
+	abs, err := filepath.Abs(path)
+	if err != nil {
+		abs = filepath.Clean(path)
+	}
+	visited := make(map[string]struct{})
+	for {
+		if _, seen := visited[abs]; seen {
+			break
+		}
+		visited[abs] = struct{}{}
+		info, statErr := os.Stat(abs)
+		if statErr != nil {
+			if isPermissionOrReadOnly(statErr) {
+				return true
+			}
+		} else if info.IsDir() {
+			if info.Mode().Perm()&0o222 == 0 {
+				return true
+			}
+		}
+		parent := filepath.Dir(abs)
+		if parent == abs {
+			break
+		}
+		abs = parent
+	}
+	return false
 }
 
 func applyTrunkCommandEnv(cmd *exec.Cmd, cfg *Config) {
