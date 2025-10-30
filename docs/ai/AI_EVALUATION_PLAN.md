@@ -30,7 +30,7 @@ This plan ties together evaluation requirements from the quality and testing doc
 | Integration | CI workflows + `trunk check`                                   | Exercise real Trunk CLI and SARIF upload             | operations/ci.md                        |
 | Evaluation  | `make eval-hotspots`                                           | Diff hotspots vs baseline fixture; schema validation | QA_CHECKLIST, QUALITY_GATES             |
 | Manual      | `./bin/punchtrunk --mode fmt,lint,hotspots`, `jq` over reports | Smoke test prior to release                          | QA_CHECKLIST, releasing.md              |
-| Security    | `govulncheck`, secrets scans, container scans                  | Maintain security gates                              | QUALITY_GATES, security-supply-chain.md |
+| Security    | `govulncheck`, secrets scans, offline bundle integrity checks  | Maintain security gates                              | QUALITY_GATES, security-supply-chain.md |
 
 ## Datasets & Fixtures
 
@@ -55,7 +55,7 @@ This plan ties together evaluation requirements from the quality and testing doc
 2. **Tests**: `make test` (unit + Bats) + `make eval-hotspots` pass locally and in CI.
 3. **Metrics Review**: Confirm runtime, coverage, and hotspot correlation targets; update `docs/testing-strategy.md` if thresholds shift.
 4. **Docs**: Update README, AGENTS, relevant `docs/` pages, and release notes when flags or workflows change (QA checklist requirement).
-5. **Security**: Run `govulncheck`, secrets detection, container scan (quality gates) before release.
+5. **Security**: Run `govulncheck`, secrets detection, offline bundle integrity verification (quality gates) before release.
 6. **Output Validation**: `jq` + `sarif validate` on `reports/hotspots.sarif`; ensure upload step configured per operations doc.
 7. **Release Prep**: Follow `docs/releasing.md` and `docs/RELEASE_PREP_SUMMARY.md` for sign-off, rollback plan, and documentation hand-off.
 
@@ -76,4 +76,4 @@ This plan ties together evaluation requirements from the quality and testing doc
 - Expand evaluation fixtures to include additional languages and large-repo churn patterns.
 - Automate Spearman correlation reporting inside `scripts/eval-hotspots.sh`.
 - Add dashboards tracking evaluation metrics over time (tie into `docs/internal/ops/OBSERVABILITY_SPEC.md`).
-- Integrate container and dependency scans into nightly evaluation workflows.
+- Integrate offline bundle validation and dependency scans into nightly evaluation workflows.

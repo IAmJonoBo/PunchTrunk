@@ -5,6 +5,9 @@ ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 SCRIPT_NAME="$(basename "$0")"
 cd "$ROOT_DIR"
 
+HYDRATE_WARNINGS_TEXT=""
+HYDRATE_WARNINGS_COUNT=0
+
 usage() {
 	cat <<EOF
 Usage: ${SCRIPT_NAME} [options]
@@ -19,7 +22,8 @@ Options:
   --trunk-binary <path>      Path to the trunk executable to include (default: ${HOME}/.trunk/bin/trunk)
   --cache-dir <path>         Trunk cache directory to bundle (default: ${HOME}/.cache/trunk when present)
   --config-dir <path>        Trunk configuration directory to bundle (default: ${ROOT_DIR}/.trunk)
-  --no-cache                 Skip bundling the Trunk cache directory
+	--no-cache                 Skip bundling the Trunk cache directory
+	--skip-hydrate             Skip prefetching Trunk tool caches before packaging
   --force                    Overwrite an existing archive with the same name
   -h, --help                 Show this help text
 EOF
@@ -61,6 +65,7 @@ CACHE_DIR="${HOME}/.cache/trunk"
 CONFIG_DIR="${ROOT_DIR}/.trunk"
 INCLUDE_CACHE=1
 FORCE=0
+HYDRATE=1
 
 while [[ $# -gt 0 ]]; do
 	case "$1" in
@@ -100,6 +105,10 @@ while [[ $# -gt 0 ]]; do
 		INCLUDE_CACHE=0
 		shift
 		;;
+	--skip-hydrate)
+		HYDRATE=0
+		shift
+		;;
 	--force)
 		FORCE=1
 		shift
@@ -124,21 +133,107 @@ abspath() {
 	fi
 }
 
+json_escape() {
+	local value="$1"
+	value="${value//\\/\\\\}"
+	value="${value//\"/\\\"}"
+	value="${value//$'\n'/\\n}"
+	printf '%s' "$value"
+}
+
+record_hydrate_warning() {
+	local message="$1"
+	if [[ -z $message ]]; then
+		return
+	fi
+	if [[ -z $HYDRATE_WARNINGS_TEXT ]]; then
+		HYDRATE_WARNINGS_TEXT="$message"
+	else
+		HYDRATE_WARNINGS_TEXT+=$'\n'"$message"
+	fi
+	HYDRATE_WARNINGS_COUNT=$((HYDRATE_WARNINGS_COUNT + 1))
+}
+
+hydrate_warnings_json() {
+	if [[ -z $HYDRATE_WARNINGS_TEXT ]]; then
+		printf '[]'
+		return
+	fi
+	local first=1
+	printf '['
+	while IFS= read -r line; do
+		if [[ -z $line ]]; then
+			continue
+		fi
+		if ((first)); then
+			first=0
+		else
+			printf ','
+		fi
+		printf '"%s"' "$(json_escape "$line")"
+	done <<<"$HYDRATE_WARNINGS_TEXT"
+	printf ']'
+}
+
+compute_sha256() {
+	local target="$1"
+	if command -v sha256sum >/dev/null 2>&1; then
+		sha256sum "$target" | awk '{print $1}'
+		return 0
+	fi
+	if command -v shasum >/dev/null 2>&1; then
+		shasum -a 256 "$target" | awk '{print $1}'
+		return 0
+	fi
+	printf "error: neither sha256sum nor shasum is available\n" >&2
+	return 1
+}
+
+run_hydrate_command() {
+	local description="$1"
+	shift
+	local output
+	set +e
+	output=$(TRUNK_CONFIG_DIR="$CONFIG_DIR" TRUNK_CACHE_DIR="$CACHE_DIR" "$@" 2>&1)
+	local rc=$?
+	set -e
+	if [[ -n ${hydrate_log-} ]]; then
+		printf '%s\n' "$output" >>"$hydrate_log"
+	fi
+	if [[ $rc -ne 0 ]]; then
+		if [[ $HYDRATE_STATUS == "success" ]]; then
+			HYDRATE_STATUS="partial"
+		fi
+		local tail_msg
+		tail_msg=$(printf '%s\n' "$output" | tail -n 1)
+		record_hydrate_warning "$description failed (exit $rc): $tail_msg"
+	fi
+}
+
 PUNCHTRUNK_BINARY="$(abspath "$PUNCHTRUNK_BINARY")"
 CONFIG_DIR="$(abspath "$CONFIG_DIR")"
 CACHE_DIR="$(abspath "$CACHE_DIR")"
 OUTPUT_DIR="$(abspath "$OUTPUT_DIR")"
 
+TRUNK_CLI_VERSION=""
+if [[ -f "$CONFIG_DIR/trunk.yaml" ]]; then
+	TRUNK_CLI_VERSION=$(awk '
+		/^[[:space:]]*cli:/ { in_cli=1; next }
+		in_cli && /^[^[:space:]]/ { in_cli=0 }
+		in_cli && /^[[:space:]]*version:/ {
+			sub(/^[[:space:]]*version:[[:space:]]*/, "", $0)
+			gsub(/"/, "", $0)
+			gsub(/[[:space:]]+$/, "", $0)
+			print $0
+			exit
+		}
+	' "$CONFIG_DIR/trunk.yaml")
+	TRUNK_CLI_VERSION="${TRUNK_CLI_VERSION}" # ensure defined
+fi
+
 # If trunk binary not provided, auto-download for target platform
 if [[ -z ${TRUNK_BINARY-} ]]; then
-	# Determine Trunk version from .trunk/trunk.yaml if present
-	TRUNK_VERSION="1.25.0"
-	if [[ -f "$CONFIG_DIR/trunk.yaml" ]]; then
-		v=$(grep -E '^\s*version:' "$CONFIG_DIR/trunk.yaml" | head -1 | awk '{print $2}')
-		if [[ -n $v ]]; then
-			TRUNK_VERSION="$v"
-		fi
-	fi
+	TRUNK_VERSION="${TRUNK_CLI_VERSION:-1.25.0}"
 	# Map arch for Trunk download
 	trunk_arch="$TARGET_ARCH"
 	if [[ $TARGET_OS == "darwin" && $trunk_arch == "amd64" ]]; then
@@ -164,6 +259,10 @@ if [[ -z ${TRUNK_BINARY-} ]]; then
 	fi
 fi
 
+if [[ -z $TRUNK_CLI_VERSION && -n ${TRUNK_VERSION-} ]]; then
+	TRUNK_CLI_VERSION="$TRUNK_VERSION"
+fi
+
 TRUNK_BINARY="$(abspath "$TRUNK_BINARY")"
 
 if [[ ! -f $PUNCHTRUNK_BINARY ]]; then
@@ -186,6 +285,32 @@ if [[ ! -d $CONFIG_DIR ]]; then
 	exit 1
 fi
 
+if [[ $INCLUDE_CACHE -eq 0 ]]; then
+	HYDRATE=0
+fi
+
+HYDRATE_STATUS="skipped"
+HYDRATE_WARNINGS_TEXT=""
+HYDRATE_WARNINGS_COUNT=0
+HYDRATE_ATTEMPTED=false
+hydrate_log=""
+
+if [[ $HYDRATE -eq 1 ]]; then
+	HYDRATE_ATTEMPTED=true
+	HYDRATE_STATUS="success"
+	if [[ ! -d $CACHE_DIR ]]; then
+		mkdir -p "$CACHE_DIR"
+	fi
+	if [[ ! -d $CACHE_DIR ]]; then
+		HYDRATE_STATUS="partial"
+		record_hydrate_warning "cache directory $CACHE_DIR could not be created"
+	else
+		hydrate_log=$(mktemp "${TMPDIR:-/tmp}/punchtrunk-hydrate.XXXXXX")
+		run_hydrate_command "trunk fmt --fetch" "$TRUNK_BINARY" fmt --fetch
+		run_hydrate_command "trunk check --fetch" "$TRUNK_BINARY" check --fetch
+	fi
+fi
+
 mkdir -p "$OUTPUT_DIR"
 
 if [[ -z $BUNDLE_NAME ]]; then
@@ -201,7 +326,7 @@ if [[ -f $OUTPUT_PATH && $FORCE -eq 0 ]]; then
 fi
 
 workdir="$(mktemp -d "${TMPDIR:-/tmp}/punchtrunk-offline.XXXXXX")"
-trap 'rm -rf "$workdir"' EXIT
+trap 'rm -rf "$workdir"; if [[ -n "${hydrate_log:-}" && -f "$hydrate_log" ]]; then rm -f "$hydrate_log"; fi' EXIT
 
 bundle_root_name="${BUNDLE_NAME%.tar.gz}"
 if [[ $bundle_root_name == "$BUNDLE_NAME" ]]; then
@@ -246,6 +371,23 @@ if version_output=$("${bundle_root}/trunk/bin/${trunk_exec}" --version 2>&1 | he
 	trunk_version="$version_output"
 fi
 
+CONFIG_SHA=""
+if [[ -f "$CONFIG_DIR/trunk.yaml" ]]; then
+	if ! CONFIG_SHA=$(compute_sha256 "$CONFIG_DIR/trunk.yaml"); then
+		CONFIG_SHA=""
+	fi
+fi
+HYDRATE_WARNINGS_JSON=$(hydrate_warnings_json)
+if [[ $HYDRATE_STATUS == "success" || $HYDRATE_STATUS == "partial" ]]; then
+	HYDRATE_ATTEMPTED_JSON=true
+else
+	HYDRATE_ATTEMPTED_JSON=false
+fi
+CACHE_DIR_SOURCE_ESC=$(json_escape "$CACHE_DIR")
+TRUNK_CLI_VERSION_ESC=$(json_escape "$TRUNK_CLI_VERSION")
+CONFIG_SHA_ESC=$(json_escape "$CONFIG_SHA")
+HYDRATE_STATUS_ESC=$(json_escape "$HYDRATE_STATUS")
+
 manifest_path="${bundle_root}/manifest.json"
 created_at="$(date -u +"%Y-%m-%dT%H:%M:%SZ")"
 cat >"$manifest_path" <<EOF
@@ -256,7 +398,13 @@ cat >"$manifest_path" <<EOF
   "trunk_version": "${trunk_version}",
   "cache_included": ${CACHE_INCLUDED},
   "config_relative_path": "trunk/config",
-  "cache_relative_path": "trunk/cache"
+	"cache_relative_path": "trunk/cache",
+	"trunk_cli_version": "${TRUNK_CLI_VERSION_ESC}",
+	"trunk_config_sha256": "${CONFIG_SHA_ESC}",
+	"hydrate_attempted": ${HYDRATE_ATTEMPTED_JSON},
+	"hydrate_status": "${HYDRATE_STATUS_ESC}",
+	"hydrate_warnings": ${HYDRATE_WARNINGS_JSON},
+	"cache_dir_source": "${CACHE_DIR_SOURCE_ESC}"
 }
 EOF
 
@@ -338,20 +486,6 @@ foreach (\$p in @(\$binPath, \$trunkPath) + (\$env:PATH -split ';')) {
 \$env:PATH = (\$orderedPaths -join ';')
 EOF
 
-compute_sha256() {
-	local target="$1"
-	if command -v sha256sum >/dev/null 2>&1; then
-		sha256sum "$target" | awk '{print $1}'
-		return 0
-	fi
-	if command -v shasum >/dev/null 2>&1; then
-		shasum -a 256 "$target" | awk '{print $1}'
-		return 0
-	fi
-	printf "error: neither sha256sum nor shasum is available\n" >&2
-	return 1
-}
-
 checksums_path="${bundle_root}/checksums.txt"
 : >"$checksums_path"
 while IFS= read -r file; do
@@ -371,6 +505,16 @@ bundle_hash="$(compute_sha256 "$OUTPUT_PATH")" || {
 	exit 1
 }
 printf "%s  %s\n" "$bundle_hash" "$(basename "$OUTPUT_PATH")" >"${OUTPUT_PATH}.sha256"
+
+if [[ $HYDRATE_WARNINGS_COUNT -gt 0 ]]; then
+	printf "warning: hydration encountered issues while preparing caches:\n" >&2
+	while IFS= read -r warn; do
+		if [[ -z $warn ]]; then
+			continue
+		fi
+		printf "  - %s\n" "$warn" >&2
+	done <<<"$HYDRATE_WARNINGS_TEXT"
+fi
 
 printf "Bundle created: %s\n" "$OUTPUT_PATH"
 printf "Bundle checksum: %s  %s\n" "$bundle_hash" "$(basename "$OUTPUT_PATH")"

@@ -29,6 +29,8 @@ import (
 	"sync"
 	"syscall"
 	"time"
+
+	yaml "gopkg.in/yaml.v3"
 )
 
 // Version is set at build time via -ldflags.
@@ -164,10 +166,79 @@ type Config struct {
 	TrunkConfigDir string
 	TrunkArgs      []string
 	TrunkBinary    string
+	TrunkVersion   string
+	TrunkCacheDir  string
+	TrunkManifest  *bundleManifest
+	TrunkConfig    *trunkYAML
+	ManifestPath   string
 	logger         *eventLogger
 	tmpDirResolved string
 	tmpDirErr      error
 	tmpDirOnce     sync.Once
+}
+
+type trunkYAML struct {
+	CLI struct {
+		Version string `yaml:"version"`
+	} `yaml:"cli"`
+	Plugins struct {
+		Sources []trunkPluginSource `yaml:"sources"`
+	} `yaml:"plugins"`
+	Runtimes struct {
+		Enabled []string `yaml:"enabled"`
+	} `yaml:"runtimes"`
+	Lint struct {
+		Enabled []string `yaml:"enabled"`
+	} `yaml:"lint"`
+}
+
+type trunkPluginSource struct {
+	ID  string `yaml:"id" json:"id"`
+	Ref string `yaml:"ref" json:"ref"`
+	URI string `yaml:"uri" json:"uri"`
+}
+
+type bundleManifest struct {
+	CreatedAt          string   `json:"created_at"`
+	PunchTrunkBinary   string   `json:"punchtrunk_binary"`
+	TrunkBinary        string   `json:"trunk_binary"`
+	TrunkVersion       string   `json:"trunk_version"`
+	CacheIncluded      bool     `json:"cache_included"`
+	ConfigRelativePath string   `json:"config_relative_path"`
+	CacheRelativePath  string   `json:"cache_relative_path"`
+	TrunkCLIVersion    string   `json:"trunk_cli_version,omitempty"`
+	TrunkConfigSHA256  string   `json:"trunk_config_sha256,omitempty"`
+	HydrateAttempted   bool     `json:"hydrate_attempted,omitempty"`
+	HydrateStatus      string   `json:"hydrate_status,omitempty"`
+	HydrateWarnings    []string `json:"hydrate_warnings,omitempty"`
+	CacheDirSource     string   `json:"cache_dir_source,omitempty"`
+}
+
+type toolHealthReport struct {
+	Timestamp     string            `json:"timestamp"`
+	ConfigDir     string            `json:"config_dir,omitempty"`
+	CacheDir      string            `json:"cache_dir,omitempty"`
+	ManifestPath  string            `json:"manifest_path,omitempty"`
+	Manifest      *bundleManifest   `json:"manifest,omitempty"`
+	Trunk         toolHealthVersion `json:"trunk"`
+	PluginSources []toolHealthItem  `json:"plugin_sources,omitempty"`
+	Runtimes      []toolHealthItem  `json:"runtimes,omitempty"`
+	Linters       []toolHealthItem  `json:"linters,omitempty"`
+	Warnings      []string          `json:"warnings,omitempty"`
+}
+
+type toolHealthVersion struct {
+	Expected string `json:"expected,omitempty"`
+	Detected string `json:"detected,omitempty"`
+	Status   string `json:"status"`
+	Message  string `json:"message,omitempty"`
+}
+
+type toolHealthItem struct {
+	Name      string `json:"name"`
+	CachePath string `json:"cache_path,omitempty"`
+	Status    string `json:"status"`
+	Message   string `json:"message,omitempty"`
 }
 
 func main() {
@@ -242,6 +313,8 @@ func main() {
 			err = runHotspots(ctx, cfg)
 		case "diagnose-airgap":
 			err = runDiagnoseAirgap(cfg)
+		case "tool-health":
+			err = runToolHealth(ctx, cfg)
 		default:
 			if cfg.Verbose {
 				cfg.log().Warnf("Skipping unknown mode %q", raw)
@@ -587,8 +660,13 @@ func applyTrunkCommandEnv(cmd *exec.Cmd, cfg *Config) {
 		return
 	}
 	env := os.Environ()
-	if cfg != nil && cfg.TrunkConfigDir != "" {
-		env = append(env, fmt.Sprintf("TRUNK_CONFIG_DIR=%s", cfg.TrunkConfigDir))
+	if cfg != nil {
+		if cfg.TrunkConfigDir != "" {
+			env = appendEnvIfMissing(env, "TRUNK_CONFIG_DIR", cfg.TrunkConfigDir)
+		}
+		if cfg.TrunkCacheDir != "" {
+			env = appendEnvIfMissing(env, "TRUNK_CACHE_DIR", cfg.TrunkCacheDir)
+		}
 	}
 	cmd.Env = env
 }
@@ -645,6 +723,7 @@ type dryRunTrunk struct {
 	Status      string
 	AutoInstall bool
 	Airgapped   bool
+	Version     string
 }
 
 type dryRunMode struct {
@@ -664,7 +743,11 @@ func buildDryRunPlan(cfg *Config) (*dryRunPlan, error) {
 	if cfg.TrunkConfigDir != "" {
 		plan.Env = append(plan.Env, fmt.Sprintf("TRUNK_CONFIG_DIR=%s", cfg.TrunkConfigDir))
 	}
+	if cfg.TrunkCacheDir != "" {
+		plan.Env = append(plan.Env, fmt.Sprintf("TRUNK_CACHE_DIR=%s", cfg.TrunkCacheDir))
+	}
 	trunkInfo, warnings := resolveDryRunTrunk(cfg)
+	trunkInfo.Version = cfg.TrunkVersion
 	plan.Trunk = trunkInfo
 	plan.Warnings = append(plan.Warnings, warnings...)
 	modes := cfg.Modes
@@ -695,6 +778,9 @@ func buildDryRunPlan(cfg *Config) (*dryRunPlan, error) {
 		case "diagnose-airgap":
 			modePlan.Command = []string{"punchtrunk", "--mode", "diagnose-airgap"}
 			modePlan.Description = "emit JSON diagnostics about offline readiness"
+		case "tool-health":
+			modePlan.Command = []string{"punchtrunk", "--mode", "tool-health"}
+			modePlan.Description = "emit cache hydration and version status"
 		default:
 			modePlan.Description = "mode not recognized; it would be skipped"
 		}
@@ -815,7 +901,13 @@ func (t dryRunTrunk) summary() string {
 			path = trunkExecutableName()
 		}
 		if t.Source != "" {
+			if strings.TrimSpace(t.Version) != "" {
+				return fmt.Sprintf("%s (source: %s, version: %s)", path, t.Source, t.Version)
+			}
 			return fmt.Sprintf("%s (source: %s)", path, t.Source)
+		}
+		if strings.TrimSpace(t.Version) != "" {
+			return fmt.Sprintf("%s (version: %s)", path, t.Version)
 		}
 		return path
 	}
@@ -947,6 +1039,230 @@ type DiagnoseReport struct {
 	Summary   DiagnoseSummary `json:"summary"`
 }
 
+func detectTrunkConfigDir(start string) (string, error) {
+	var err error
+	if strings.TrimSpace(start) == "" {
+		start, err = os.Getwd()
+		if err != nil {
+			return "", fmt.Errorf("getwd: %w", err)
+		}
+	}
+	start = filepath.Clean(start)
+	if start == "" || start == string(filepath.Separator) {
+		return "", nil
+	}
+	prev := ""
+	dir := start
+	for {
+		candidate := filepath.Join(dir, ".trunk", "trunk.yaml")
+		info, statErr := os.Stat(candidate)
+		if statErr == nil && !info.IsDir() {
+			return filepath.Dir(candidate), nil
+		}
+		if statErr != nil && !errors.Is(statErr, os.ErrNotExist) {
+			return "", fmt.Errorf("stat %s: %w", candidate, statErr)
+		}
+		if dir == prev {
+			break
+		}
+		prev = dir
+		dir = filepath.Dir(dir)
+		if dir == "" {
+			break
+		}
+	}
+	return "", nil
+}
+
+func loadTrunkConfig(dir string) (*trunkYAML, error) {
+	if dir == "" {
+		return nil, fmt.Errorf("trunk config directory is empty")
+	}
+	file := filepath.Join(dir, "trunk.yaml")
+	data, err := os.ReadFile(file)
+	if err != nil {
+		return nil, fmt.Errorf("read %s: %w", file, err)
+	}
+	var cfg trunkYAML
+	if err := yaml.Unmarshal(data, &cfg); err != nil {
+		return nil, fmt.Errorf("parse %s: %w", file, err)
+	}
+	return &cfg, nil
+}
+
+func detectBundleManifest(cfg *Config) (*bundleManifest, string, error) {
+	var candidates []string
+	if home := strings.TrimSpace(os.Getenv("PUNCHTRUNK_HOME")); home != "" {
+		candidates = append(candidates, filepath.Join(home, "manifest.json"))
+	}
+	if cfg != nil && strings.TrimSpace(cfg.TrunkConfigDir) != "" {
+		t := filepath.Clean(cfg.TrunkConfigDir)
+		candidates = append(candidates,
+			filepath.Join(filepath.Dir(t), "manifest.json"),
+			filepath.Join(filepath.Dir(filepath.Dir(t)), "manifest.json"),
+		)
+	}
+	seen := map[string]struct{}{}
+	for _, raw := range candidates {
+		if raw == "" {
+			continue
+		}
+		abs, err := filepath.Abs(raw)
+		if err != nil {
+			continue
+		}
+		if _, ok := seen[abs]; ok {
+			continue
+		}
+		seen[abs] = struct{}{}
+		data, err := os.ReadFile(abs)
+		if err != nil {
+			continue
+		}
+		var manifest bundleManifest
+		if err := json.Unmarshal(data, &manifest); err != nil {
+			continue
+		}
+		return &manifest, abs, nil
+	}
+	return nil, "", nil
+}
+
+func detectTrunkCacheDir(cfg *Config) string {
+	if env := strings.TrimSpace(os.Getenv("TRUNK_CACHE_DIR")); env != "" {
+		return filepath.Clean(env)
+	}
+	if cfg != nil && cfg.TrunkManifest != nil {
+		if base := manifestBaseDir(cfg.ManifestPath); base != "" {
+			rel := strings.TrimSpace(cfg.TrunkManifest.CacheRelativePath)
+			if rel != "" {
+				candidate := filepath.Join(base, rel)
+				if pathExists(candidate) {
+					return candidate
+				}
+			}
+		}
+	}
+	if home := strings.TrimSpace(os.Getenv("PUNCHTRUNK_HOME")); home != "" {
+		candidate := filepath.Join(home, "trunk", "cache")
+		if pathExists(candidate) {
+			return candidate
+		}
+	}
+	if cfg != nil && strings.TrimSpace(cfg.TrunkConfigDir) != "" {
+		candidate := filepath.Join(filepath.Dir(cfg.TrunkConfigDir), "cache")
+		if pathExists(candidate) {
+			return candidate
+		}
+	}
+	if home, err := os.UserHomeDir(); err == nil {
+		candidate := filepath.Join(home, ".cache", "trunk")
+		return candidate
+	}
+	return ""
+}
+
+func manifestBaseDir(path string) string {
+	if strings.TrimSpace(path) == "" {
+		return ""
+	}
+	abs, err := filepath.Abs(path)
+	if err != nil {
+		return ""
+	}
+	info, err := os.Stat(abs)
+	if err != nil || info.IsDir() {
+		return ""
+	}
+	return filepath.Dir(abs)
+}
+
+func pathExists(path string) bool {
+	if strings.TrimSpace(path) == "" {
+		return false
+	}
+	_, err := os.Stat(path)
+	return err == nil
+}
+
+func appendEnvIfMissing(env []string, key, value string) []string {
+	key = strings.TrimSpace(key)
+	value = strings.TrimSpace(value)
+	if key == "" || value == "" {
+		return env
+	}
+	prefix := key + "="
+	for _, kv := range env {
+		if strings.HasPrefix(kv, prefix) {
+			return env
+		}
+	}
+	return append(env, fmt.Sprintf("%s=%s", key, value))
+}
+
+func cachePath(base string, parts ...string) string {
+	if strings.TrimSpace(base) == "" {
+		return ""
+	}
+	segments := append([]string{base}, parts...)
+	return filepath.Join(segments...)
+}
+
+func detectTrunkVersion(ctx context.Context, trunkPath string) (string, error) {
+	if strings.TrimSpace(trunkPath) == "" {
+		return "", fmt.Errorf("trunk path is empty")
+	}
+	cmd := exec.CommandContext(ctx, trunkPath, "--version")
+	cmd.Env = append(os.Environ(), "TRUNK_TELEMETRY_OPTOUT=1")
+	out, err := cmd.CombinedOutput()
+	if err != nil {
+		return "", fmt.Errorf("trunk --version: %w (%s)", err, strings.TrimSpace(string(out)))
+	}
+	version := strings.TrimSpace(string(out))
+	if idx := strings.Index(version, "\n"); idx >= 0 {
+		version = strings.TrimSpace(version[:idx])
+	}
+	return version, nil
+}
+
+func normalizeTrunkVersion(v string) string {
+	v = strings.TrimSpace(v)
+	v = strings.TrimPrefix(v, "trunk version ")
+	v = strings.TrimPrefix(v, "trunk ")
+	return strings.TrimSpace(v)
+}
+
+func trunkVersionMatches(expected, actual string) bool {
+	if strings.TrimSpace(expected) == "" || strings.TrimSpace(actual) == "" {
+		return true
+	}
+	actualNorm := normalizeTrunkVersion(actual)
+	if actualNorm == expected {
+		return true
+	}
+	if strings.Contains(actual, expected) {
+		return true
+	}
+	for _, field := range strings.Fields(actualNorm) {
+		if field == expected {
+			return true
+		}
+	}
+	return false
+}
+
+func splitToolReference(ref string) (string, string) {
+	ref = strings.TrimSpace(ref)
+	if ref == "" {
+		return "", ""
+	}
+	parts := strings.SplitN(ref, "@", 2)
+	if len(parts) == 2 {
+		return strings.TrimSpace(parts[0]), strings.TrimSpace(parts[1])
+	}
+	return strings.TrimSpace(ref), ""
+}
+
 func ensureEnvironment(ctx context.Context, cfg *Config) error {
 	if _, err := exec.LookPath("git"); err != nil {
 		return fmt.Errorf("git is required: %w", err)
@@ -954,6 +1270,19 @@ func ensureEnvironment(ctx context.Context, cfg *Config) error {
 
 	if _, err := cfg.resolveTmpDir(); err != nil {
 		return err
+	}
+
+	if cfg.TrunkConfigDir == "" {
+		if detected, err := detectTrunkConfigDir(""); err != nil {
+			if cfg.Verbose {
+				cfg.log().Warnf("trunk config discovery failed: %v", err)
+			}
+		} else if detected != "" {
+			cfg.TrunkConfigDir = detected
+			if cfg.Verbose {
+				cfg.log().Infof("Detected Trunk config at %s", cfg.TrunkConfigDir)
+			}
+		}
 	}
 
 	if cfg.TrunkConfigDir != "" {
@@ -969,12 +1298,47 @@ func ensureEnvironment(ctx context.Context, cfg *Config) error {
 			return fmt.Errorf("trunk-config-dir %s is not a directory", abs)
 		}
 		cfg.TrunkConfigDir = abs
-		if _, err := os.Stat(filepath.Join(abs, "trunk.yaml")); errors.Is(err, os.ErrNotExist) {
+		configPath := filepath.Join(abs, "trunk.yaml")
+		if _, err := os.Stat(configPath); errors.Is(err, os.ErrNotExist) {
 			if cfg.Verbose {
 				cfg.log().Warnf("trunk-config-dir %s does not contain trunk.yaml; trunk will rely on discovery", abs)
 			}
 		} else if err != nil {
 			return fmt.Errorf("trunk-config-dir %s: %w", abs, err)
+		} else {
+			if parsed, err := loadTrunkConfig(abs); err != nil {
+				cfg.log().Warnf("failed to parse %s: %v", configPath, err)
+			} else {
+				cfg.TrunkConfig = parsed
+			}
+		}
+	}
+
+	if cfg.TrunkConfig == nil {
+		if detected, err := detectTrunkConfigDir(cfg.TrunkConfigDir); err == nil && detected != "" {
+			if parsed, perr := loadTrunkConfig(detected); perr == nil {
+				cfg.TrunkConfig = parsed
+				if cfg.TrunkConfigDir == "" {
+					cfg.TrunkConfigDir = detected
+				}
+			}
+		}
+	}
+
+	manifest, manifestPath, manifestErr := detectBundleManifest(cfg)
+	if manifestErr != nil {
+		if cfg.Verbose {
+			cfg.log().Warnf("manifest detection failed: %v", manifestErr)
+		}
+	} else {
+		cfg.TrunkManifest = manifest
+		cfg.ManifestPath = manifestPath
+	}
+
+	cfg.TrunkCacheDir = detectTrunkCacheDir(cfg)
+	if cfg.TrunkCacheDir != "" {
+		if err := os.MkdirAll(cfg.TrunkCacheDir, 0o755); err != nil && cfg.Verbose {
+			cfg.log().Warnf("unable to ensure cache directory %s: %v", cfg.TrunkCacheDir, err)
 		}
 	}
 
@@ -984,6 +1348,14 @@ func ensureEnvironment(ctx context.Context, cfg *Config) error {
 			return fmt.Errorf("trunk-binary validation: %w", err)
 		}
 		cfg.TrunkPath = resolved
+		if version, err := detectTrunkVersion(ctx, cfg.TrunkPath); err == nil {
+			cfg.TrunkVersion = version
+			if cfg.TrunkConfig != nil && cfg.TrunkConfig.CLI.Version != "" && !trunkVersionMatches(cfg.TrunkConfig.CLI.Version, version) {
+				cfg.log().Warnf("Trunk CLI version mismatch: config expects %s but resolved %s", cfg.TrunkConfig.CLI.Version, version)
+			}
+		} else if cfg.Verbose {
+			cfg.log().Warnf("unable to resolve trunk version: %v", err)
+		}
 		if cfg.Verbose {
 			cfg.log().Infof("Using user-supplied trunk binary: %s", resolved)
 		}
@@ -995,6 +1367,14 @@ func ensureEnvironment(ctx context.Context, cfg *Config) error {
 		return err
 	}
 	cfg.TrunkPath = trunkPath
+	if version, err := detectTrunkVersion(ctx, cfg.TrunkPath); err == nil {
+		cfg.TrunkVersion = version
+		if cfg.TrunkConfig != nil && cfg.TrunkConfig.CLI.Version != "" && !trunkVersionMatches(cfg.TrunkConfig.CLI.Version, version) {
+			cfg.log().Warnf("Trunk CLI version mismatch: config expects %s but resolved %s", cfg.TrunkConfig.CLI.Version, version)
+		}
+	} else if cfg.Verbose {
+		cfg.log().Warnf("unable to resolve trunk version: %v", err)
+	}
 	return nil
 }
 
@@ -1007,6 +1387,168 @@ func runDiagnoseAirgap(cfg *Config) error {
 	fmt.Println(string(data))
 	if report.Summary.Error > 0 {
 		return fmt.Errorf("diagnostics found %d blocking issue(s)", report.Summary.Error)
+	}
+	return nil
+}
+
+func runToolHealth(ctx context.Context, cfg *Config) error {
+	if cfg == nil {
+		cfg = &Config{}
+	}
+	report := toolHealthReport{
+		Timestamp:    time.Now().UTC().Format(time.RFC3339),
+		ConfigDir:    cfg.TrunkConfigDir,
+		CacheDir:     cfg.TrunkCacheDir,
+		ManifestPath: cfg.ManifestPath,
+		Manifest:     cfg.TrunkManifest,
+	}
+	expectedVersion := ""
+	if cfg.TrunkConfig != nil {
+		report.Trunk.Expected = strings.TrimSpace(cfg.TrunkConfig.CLI.Version)
+		expectedVersion = report.Trunk.Expected
+	}
+	report.Trunk.Detected = strings.TrimSpace(cfg.TrunkVersion)
+	switch {
+	case report.Trunk.Detected == "":
+		report.Trunk.Status = "unknown"
+		report.Trunk.Message = "trunk version not resolved"
+	case expectedVersion == "":
+		report.Trunk.Status = "detected"
+		report.Trunk.Message = "no CLI version pinned in trunk.yaml"
+	case trunkVersionMatches(expectedVersion, report.Trunk.Detected):
+		report.Trunk.Status = "match"
+	default:
+		report.Trunk.Status = "mismatch"
+		report.Trunk.Message = fmt.Sprintf("expected %s but detected %s", expectedVersion, report.Trunk.Detected)
+	}
+
+	cacheDir := strings.TrimSpace(cfg.TrunkCacheDir)
+	cacheAvailable := cacheDir != "" && pathExists(cacheDir)
+	var warnings []string
+	issues := false
+	if cacheDir == "" {
+		warnings = append(warnings, "TRUNK_CACHE_DIR not resolved; cache hydration status is unknown")
+	} else if !cacheAvailable {
+		warnings = append(warnings, fmt.Sprintf("cache directory %s does not exist", cacheDir))
+	}
+
+	if cfg.TrunkManifest != nil && !cfg.TrunkManifest.CacheIncluded {
+		warnings = append(warnings, "bundle manifest indicates cache was not included during build")
+	}
+
+	buildItem := func(name, pathWhenKnown string, hydrated bool, message string) toolHealthItem {
+		status := "hydrated"
+		if !hydrated {
+			status = "missing"
+			if message == "" {
+				message = "cache entry not found"
+			}
+		}
+		if cacheDir == "" {
+			status = "unknown"
+			if message == "" {
+				message = "cache directory not resolved"
+			}
+		}
+		if cacheDir != "" && !cacheAvailable {
+			status = "missing"
+			if message == "" {
+				message = "cache directory missing"
+			}
+		}
+		return toolHealthItem{Name: name, CachePath: pathWhenKnown, Status: status, Message: message}
+	}
+
+	if cfg.TrunkConfig != nil {
+		for _, src := range cfg.TrunkConfig.Plugins.Sources {
+			name := strings.TrimSpace(src.ID)
+			if src.Ref != "" {
+				name = fmt.Sprintf("%s@%s", strings.TrimSpace(src.ID), strings.TrimSpace(src.Ref))
+			}
+			cacheEntry := ""
+			hydrated := false
+			message := ""
+			if cacheDir == "" {
+				message = "cache directory not resolved"
+			} else if src.ID == "" || src.Ref == "" {
+				message = "plugin source missing id or ref"
+				statusItem := buildItem(name, cacheEntry, false, message)
+				report.PluginSources = append(report.PluginSources, statusItem)
+				continue
+			} else {
+				cacheEntry = cachePath(cacheDir, "plugins", strings.TrimSpace(src.ID), strings.TrimSpace(src.Ref))
+				hydrated = pathExists(cacheEntry)
+				if !hydrated {
+					message = "plugin cache not found"
+					warnings = append(warnings, fmt.Sprintf("missing plugin cache for %s (%s)", name, cacheEntry))
+					issues = true
+				}
+			}
+			report.PluginSources = append(report.PluginSources, buildItem(name, cacheEntry, hydrated, message))
+		}
+
+		for _, runtime := range cfg.TrunkConfig.Runtimes.Enabled {
+			runtimeName := strings.TrimSpace(runtime)
+			tool, version := splitToolReference(runtimeName)
+			cacheEntry := ""
+			hydrated := false
+			message := ""
+			if tool == "" || version == "" {
+				message = "runtime entry missing version"
+				report.Runtimes = append(report.Runtimes, toolHealthItem{Name: runtimeName, Status: "skipped", Message: message})
+				continue
+			}
+			if cacheDir != "" {
+				cacheEntry = cachePath(cacheDir, "runtimes", tool, version)
+				hydrated = pathExists(cacheEntry)
+				if !hydrated {
+					message = "runtime cache not found"
+					warnings = append(warnings, fmt.Sprintf("missing runtime cache %s (%s)", runtimeName, cacheEntry))
+					issues = true
+				}
+			}
+			report.Runtimes = append(report.Runtimes, buildItem(runtimeName, cacheEntry, hydrated, message))
+		}
+
+		for _, lint := range cfg.TrunkConfig.Lint.Enabled {
+			lintName := strings.TrimSpace(lint)
+			tool, version := splitToolReference(lintName)
+			cacheEntry := ""
+			hydrated := false
+			message := ""
+			if version == "" {
+				report.Linters = append(report.Linters, toolHealthItem{Name: lintName, Status: "skipped", Message: "linter not pinned to a version"})
+				continue
+			}
+			if cacheDir != "" {
+				cacheEntry = cachePath(cacheDir, "tools", tool, version)
+				hydrated = pathExists(cacheEntry)
+				if !hydrated {
+					message = "tool cache not found"
+					warnings = append(warnings, fmt.Sprintf("missing tool cache %s (%s)", lintName, cacheEntry))
+					issues = true
+				}
+			}
+			report.Linters = append(report.Linters, buildItem(lintName, cacheEntry, hydrated, message))
+		}
+	}
+
+	if len(warnings) > 0 {
+		report.Warnings = append(report.Warnings, warnings...)
+	}
+	data, err := json.MarshalIndent(report, "", "  ")
+	if err != nil {
+		return fmt.Errorf("marshal tool health: %w", err)
+	}
+	fmt.Println(string(data))
+	if report.Trunk.Status == "mismatch" {
+		issues = true
+	}
+	if !cacheAvailable && cacheDir != "" {
+		issues = true
+	}
+	if issues {
+		return fmt.Errorf("tool-health detected issues; see report warnings for details")
 	}
 	return nil
 }

@@ -24,7 +24,7 @@ Quality gates apply to every roadmap item:
 
 1. ✅ **Offline Bootstrap Bundle**
 
-- Shipped: Oct 2025. `scripts/build-offline-bundle.sh` now produces verified archives bundling PunchTrunk, Trunk CLI, `.trunk` config, and optional cache to unblock sealed runners.
+- Shipped: Oct 2025. `scripts/build-offline-bundle.sh` now produces verified archives bundling PunchTrunk, Trunk CLI, `.trunk` config, and optional cache to unblock sealed runners; the latest revision auto-hydrates caches, records manifest metadata (CLI version, config checksum, hydration outcome), and surfaces warnings when fetches fail.
 - Tests: `TestOfflineBundleSupportsAirgappedHotspots` in `cmd/punchtrunk/main_test.go` builds the bundle, unpacks it, and runs hotspots with `PUNCHTRUNK_AIRGAPPED=1`.
 - Docs: README and `docs/INTEGRATION_GUIDE.md` document archive creation, verification, and usage steps for offline agents.
 
@@ -33,6 +33,12 @@ Quality gates apply to every roadmap item:
 - Shipped: Aug 2025. Provides JSON diagnostics covering git availability, trunk binaries, airgap env vars, and SARIF writability.
 - Tests: `TestDiagnoseAirgapHappyPath` and `TestDiagnoseAirgapDetectsMissingTrunk` in `cmd/punchtrunk/main_test.go` validate success/failure cases.
 - Docs: README + agent guides reference the mode; outputs integrate with structured logging.
+
+1. ✅ **`punchtrunk --mode tool-health`**
+
+- Shipped: Oct 2025. Compares the resolved Trunk CLI version to `.trunk/trunk.yaml`, inspects hydrated plugin/runtime/tool caches, and emits a JSON report suitable for provisioning gates.
+- Tests: `TestToolHealthReportsMismatch` and `TestToolHealthMissingCaches` in `cmd/punchtrunk/main_test.go` cover success/failure paths.
+- Docs: README, integration guide, release workflow, and agent handbook now document usage and expected outputs.
 
 1. ✅ **JSON Logging Toggle (`--json-logs`)**
 

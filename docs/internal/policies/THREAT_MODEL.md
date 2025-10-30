@@ -4,7 +4,7 @@
 
 - **Source code repository:** Go code, Trunk configs, scripts. Boundary: git working tree accessible to PunchTrunk.
 - **SARIF artefacts:** `reports/hotspots.sarif` stored locally and uploaded to GitHub Code Scanning. Boundary: local filesystem and GitHub API.
-- **Build artefacts:** `bin/punchtrunk` binary and `punchtrunk:local` Docker image. Boundary: CI pipeline and container registry.
+- **Build artefacts:** `bin/punchtrunk` binary and offline bundles. Boundary: CI pipeline and release storage.
 - **CI credentials:** GitHub token available to workflow. Keep usage minimal (checkout and SARIF upload only).
 
 ## Threats & mitigations
@@ -14,7 +14,7 @@
 - **Repudiation:** Contributor denies changes. _Mitigation:_ Pull requests, commit signatures (optional), and CI logs provide audit trail.
 - **Information disclosure:** SARIF leaks secrets or proprietary code externally. _Mitigation:_ Secrets scanning enforced via Trunk; SARIF uploaded only to GitHub Code Scanning; redact sensitive content before external sharing.
 - **Denial of Service:** Hotspot computation hangs or consumes excessive resources. _Mitigation:_ context timeouts, cap analysis to top 500 files, and degrade gracefully when git history missing.
-- **Elevation of privilege:** CLI gains more access than intended. _Mitigation:_ run container as `nonroot`; limit write paths (`bin/`, `reports/`); avoid executing untrusted scripts; CI tokens have least privilege.
+- **Elevation of privilege:** CLI gains more access than intended. _Mitigation:_ run CI jobs as non-root users; limit write paths (`bin/`, `reports/`); avoid executing untrusted scripts; CI tokens have least privilege.
 
 ## Residual risks & owners
 

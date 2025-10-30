@@ -13,7 +13,6 @@ This guide covers integrating PunchTrunk into CI/CD pipelines, ephemeral runners
 - [Jenkins](#jenkins)
 - [Ephemeral Runners](#ephemeral-runners)
 - [Offline & Air-Gapped Environments](#offline--air-gapped-environments)
-- [Container-Based Workflows](#container-based-workflows)
 - [Agent Integration](#agent-integration)
 - [Best Practices](#best-practices)
 - [Troubleshooting](#troubleshooting)
@@ -22,29 +21,24 @@ This guide covers integrating PunchTrunk into CI/CD pipelines, ephemeral runners
 
 ### Installation
 
-**Offline Bundle (all-in-one):**
+**Offline bundle (recommended for CI and ephemeral runners):**
 
 ```bash
-curl -L https://github.com/IAmJonoBo/PunchTrunk/releases/latest/download/punchtrunk-offline-<os>-<arch>.tar.gz -o punchtrunk-offline.tgz
+curl -L https://github.com/IAmJonoBo/PunchTrunk/releases/latest/download/punchtrunk-offline-<os>-<arch>.tar.gz \
+  -o punchtrunk-offline.tgz
 ./scripts/setup-airgap.sh --bundle punchtrunk-offline.tgz --install-dir /opt/punchtrunk --force
 source /opt/punchtrunk/punchtrunk-airgap.env
 ```
 
-The bundle includes PunchTrunk, the pinned Trunk CLI, `.trunk/` configs, optional cached toolchains, and an environment file that wires everything up for you.
+The bundle contains PunchTrunk, a pinned Trunk CLI, `.trunk/` configs, optional cached toolchains, and ready-to-use environment helpers (`punchtrunk-airgap.env` / `.ps1`). Sourcing the helper exports `PUNCHTRUNK_TRUNK_BINARY`, toggles airgapped mode, and prepends the bundled binaries to `PATH`.
 
-**Binary Installation:**
+**Install script (developer laptops):**
 
 ```bash
 curl -fsSL https://raw.githubusercontent.com/IAmJonoBo/PunchTrunk/main/scripts/install.sh | bash
 ```
 
-**Container Usage:**
-
-```bash
-docker pull ghcr.io/iamjonobo/punchtrunk:latest
-```
-
-The container image exposes the baked-in Trunk CLI at `/app/trunk` and sets `PUNCHTRUNK_TRUNK_BINARY` automatically.
+This installs the latest release into `/usr/local/bin`. PunchTrunk will auto-install Trunk on demand when you have sudo rights. For restricted environments, supply `--trunk-binary` or source an offline bundle instead.
 
 ### Basic Usage
 
@@ -67,7 +61,7 @@ punchtrunk --mode hotspots --base-branch=origin/main
 
 ## GitHub Actions
 
-### Complete Integration
+### Complete integration (offline bundle)
 
 ```yaml
 name: Quality Checks
@@ -83,7 +77,7 @@ jobs:
     timeout-minutes: 20
     permissions:
       contents: read
-      security-events: write # For SARIF upload
+      security-events: write # Required for SARIF uploads
 
     steps:
       - name: Checkout code
@@ -91,8 +85,7 @@ jobs:
         with:
           fetch-depth: 0 # Required for hotspot analysis
 
-      # Cache Trunk tools for faster runs
-      - name: Cache Trunk
+      - name: Restore Trunk cache
         uses: actions/cache@v4
         with:
           path: ~/.cache/trunk
@@ -100,33 +93,29 @@ jobs:
           restore-keys: |
             trunk-${{ runner.os }}-
 
-  # Optional: seed the Trunk installer cache (PunchTrunk auto-installs if missing)
-  - name: Install Trunk (optional)
+      - name: Install PunchTrunk bundle
         run: |
-          curl https://get.trunk.io -fsSL | bash -s -- -y
-          echo "${HOME}/.trunk/bin" >> $GITHUB_PATH
+          curl -L https://github.com/IAmJonoBo/PunchTrunk/releases/latest/download/punchtrunk-offline-linux-amd64.tar.gz \
+            -o $RUNNER_TEMP/punchtrunk-offline.tgz
+          mkdir -p $RUNNER_TEMP/punchtrunk
+          tar -xzf $RUNNER_TEMP/punchtrunk-offline.tgz -C $RUNNER_TEMP/punchtrunk
+          BUNDLE_DIR=$(find $RUNNER_TEMP/punchtrunk -maxdepth 1 -type d -name 'punchtrunk-offline-*' | head -n1)
+          echo "PUNCHTRUNK_HOME=${BUNDLE_DIR}" >> $GITHUB_ENV
+          echo "PUNCHTRUNK_TRUNK_BINARY=${BUNDLE_DIR}/trunk/bin/trunk" >> $GITHUB_ENV
+          echo "${BUNDLE_DIR}/bin" >> $GITHUB_PATH
+          echo "${BUNDLE_DIR}/trunk/bin" >> $GITHUB_PATH
 
-      # Install PunchTrunk
-      - name: Install PunchTrunk
-        run: |
-          curl -fsSL https://raw.githubusercontent.com/IAmJonoBo/PunchTrunk/main/scripts/install.sh | bash
-
-      # Run PunchTrunk
       - name: Run PunchTrunk
         run: |
           punchtrunk --mode fmt,lint,hotspots \
-            --base-branch=origin/${{ github.event_name == 'pull_request' && github.event.pull_request.base.ref || 'main' }} \
-            --verbose
-        continue-on-error: true # Don't fail on lint issues
+            --base-branch=origin/${{ github.event_name == 'pull_request' && github.event.pull_request.base.ref || 'main' }}
 
-      # Upload SARIF to GitHub Code Scanning
       - name: Upload SARIF
         uses: github/codeql-action/upload-sarif@v3
         with:
           sarif_file: reports/hotspots.sarif
 
-      # Optional: Upload artifacts for debugging
-      - name: Upload reports
+      - name: Upload reports (optional)
         if: always()
         uses: actions/upload-artifact@v4
         with:
@@ -135,52 +124,37 @@ jobs:
           retention-days: 7
 ```
 
-### Container-Based Workflow
+### Lightweight integration (reuse installer)
+
+For developer-focused pipelines where sudo is available, you can keep using the install script. PunchTrunk detects missing Trunk binaries and installs them automatically; add a cache on `~/.trunk/bin` to speed up subsequent jobs.
 
 ```yaml
 jobs:
-  punchtrunk:
-    runs-on: ubuntu-latest
-    container:
-      image: ghcr.io/iamjonobo/punchtrunk:latest
-
-    steps:
-      - name: Checkout code
-        uses: actions/checkout@v4
-        with:
-          fetch-depth: 0
-
-      - name: Run PunchTrunk
-        run: |
-          /app/punchtrunk --mode hotspots --base-branch=HEAD~10
-```
-
-### Minimal Integration (Hotspots Only)
-
-```yaml
-jobs:
-  hotspots:
+  lint:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
         with:
           fetch-depth: 0
 
-      - name: Run PunchTrunk Hotspots
-        run: |
-          docker run --rm -v $(pwd):/workspace -w /workspace \
-            ghcr.io/iamjonobo/punchtrunk:latest \
-            --mode hotspots
-
-      - name: Upload SARIF
-        uses: github/codeql-action/upload-sarif@v3
+      - uses: actions/cache@v4
         with:
-          sarif_file: reports/hotspots.sarif
+          path: |
+            ~/.cache/trunk
+            ~/.trunk/bin
+          key: trunk-${{ runner.os }}-${{ hashFiles('.trunk/trunk.yaml') }}
+
+      - name: Install PunchTrunk
+        run: |
+          curl -fsSL https://raw.githubusercontent.com/IAmJonoBo/PunchTrunk/main/scripts/install.sh | bash
+
+      - name: Run hotspots only
+        run: punchtrunk --mode hotspots --base-branch=origin/main
 ```
 
 ## GitLab CI
 
-### Complete Pipeline
+### Complete pipeline (offline bundle)
 
 ```yaml
 # .gitlab-ci.yml
@@ -190,18 +164,27 @@ stages:
   - security
 
 variables:
-  PUNCHTRUNK_VERSION: "latest"
+  PUNCHTRUNK_BUNDLE_URL: "https://github.com/IAmJonoBo/PunchTrunk/releases/latest/download/punchtrunk-offline-linux-amd64.tar.gz"
+  PUNCHTRUNK_INSTALL_DIR: "$CI_PROJECT_DIR/.punchtrunk"
+
+cache:
+  key: "trunk-${CI_COMMIT_REF_SLUG}"
+  paths:
+    - .cache/trunk
 
 .punchtrunk-base:
-  image: ghcr.io/iamjonobo/punchtrunk:${PUNCHTRUNK_VERSION}
   before_script:
     - git fetch --unshallow || true # Ensure full history
+    - curl -L "${PUNCHTRUNK_BUNDLE_URL}" -o ${CI_PROJECT_DIR}/punchtrunk-offline.tgz
+    - bash ./scripts/setup-airgap.sh --bundle ${CI_PROJECT_DIR}/punchtrunk-offline.tgz --install-dir "${PUNCHTRUNK_INSTALL_DIR}" --force
+    - source "${PUNCHTRUNK_INSTALL_DIR}/punchtrunk-airgap.env"
+    - export PATH="${PUNCHTRUNK_HOME}/bin:${PATH}"
 
 quality:fmt-lint:
   extends: .punchtrunk-base
   stage: quality
   script:
-    - /app/punchtrunk --mode fmt,lint --autofix=none
+    - punchtrunk --mode fmt,lint --autofix=none
   allow_failure: true
   rules:
     - if: $CI_PIPELINE_SOURCE == "merge_request_event"
@@ -211,7 +194,7 @@ security:hotspots:
   extends: .punchtrunk-base
   stage: security
   script:
-    - /app/punchtrunk --mode hotspots --base-branch=origin/${CI_DEFAULT_BRANCH}
+    - punchtrunk --mode hotspots --base-branch=origin/${CI_DEFAULT_BRANCH}
   artifacts:
     reports:
       sast: reports/hotspots.sarif
@@ -223,15 +206,19 @@ security:hotspots:
     - if: $CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH
 ```
 
-### With Binary Installation
+### Lightweight job (installer reuse)
 
 ```yaml
 quality:punchtrunk:
   image: golang:1.22
   stage: quality
+  cache:
+    key: "trunk-${CI_COMMIT_REF_SLUG}"
+    paths:
+      - .cache/trunk
+      - ${HOME}/.trunk/bin
   before_script:
     - curl -fsSL https://raw.githubusercontent.com/IAmJonoBo/PunchTrunk/main/scripts/install.sh | bash
-    - curl https://get.trunk.io -fsSL | bash -s -- -y
     - export PATH="${HOME}/.trunk/bin:/usr/local/bin:${PATH}"
   script:
     - punchtrunk --mode fmt,lint,hotspots --verbose
@@ -250,7 +237,17 @@ version: 2.1
 executors:
   punchtrunk:
     docker:
-      - image: ghcr.io/iamjonobo/punchtrunk:latest
+      - image: cimg/base:stable
+
+commands:
+  install-punchtrunk:
+    steps:
+      - run:
+          name: Install PunchTrunk bundle
+          command: |
+            curl -L https://github.com/IAmJonoBo/PunchTrunk/releases/latest/download/punchtrunk-offline-linux-amd64.tar.gz -o /tmp/punchtrunk-offline.tgz
+            bash ./scripts/setup-airgap.sh --bundle /tmp/punchtrunk-offline.tgz --install-dir "${HOME}/.punchtrunk" --force
+            echo 'source ${HOME}/.punchtrunk/punchtrunk-airgap.env' >> $BASH_ENV
 
 jobs:
   quality-check:
@@ -260,10 +257,10 @@ jobs:
       - run:
           name: Fetch full history
           command: git fetch --unshallow || true
+      - install-punchtrunk
       - run:
           name: Run PunchTrunk
-          command: |
-            /app/punchtrunk --mode fmt,lint,hotspots
+          command: punchtrunk --mode fmt,lint,hotspots --base-branch=origin/main
       - store_artifacts:
           path: reports/
           destination: punchtrunk-reports
@@ -281,43 +278,36 @@ workflows:
 
 ```groovy
 pipeline {
-    agent {
-        docker {
-            image 'ghcr.io/iamjonobo/punchtrunk:latest'
-            args '-v $WORKSPACE:/workspace -w /workspace'
-        }
-    }
+    agent any
 
     environment {
         PUNCHTRUNK_MODE = 'fmt,lint,hotspots'
         BASE_BRANCH = 'origin/main'
+        PUNCHTRUNK_BUNDLE_URL = 'https://github.com/IAmJonoBo/PunchTrunk/releases/latest/download/punchtrunk-offline-linux-amd64.tar.gz'
+        PUNCHTRUNK_INSTALL_DIR = "${env.WORKSPACE}/.punchtrunk"
     }
 
     stages {
         stage('Setup') {
             steps {
-                // Ensure full git history
                 sh 'git fetch --unshallow || true'
+                sh '''
+                  curl -L ${PUNCHTRUNK_BUNDLE_URL} -o ${WORKSPACE}/punchtrunk-offline.tgz
+                  bash ./scripts/setup-airgap.sh --bundle ${WORKSPACE}/punchtrunk-offline.tgz --install-dir ${PUNCHTRUNK_INSTALL_DIR} --force
+                '''
+                sh 'echo "source ${PUNCHTRUNK_INSTALL_DIR}/punchtrunk-airgap.env" >> ${WORKSPACE}/.punchtrunk-env'
             }
         }
 
         stage('Quality Check') {
             steps {
-                sh '/app/punchtrunk --mode ${PUNCHTRUNK_MODE} --base-branch=${BASE_BRANCH} --verbose'
+                sh '. ${WORKSPACE}/.punchtrunk-env && punchtrunk --mode ${PUNCHTRUNK_MODE} --base-branch=${BASE_BRANCH} --verbose'
             }
         }
 
         stage('Archive Results') {
             steps {
                 archiveArtifacts artifacts: 'reports/**/*', allowEmptyArchive: true
-
-                // Optional: Publish SARIF to security tools
-                publishWarnings(
-                    parserConfigurations: [[
-                        parserName: 'SARIF',
-                        pattern: 'reports/hotspots.sarif'
-                    ]]
-                )
             }
         }
     }
@@ -335,7 +325,7 @@ pipeline {
 PunchTrunk is optimized for ephemeral runners with:
 
 - Fast cold starts (< 1 minute with caching)
-- Minimal dependencies (single binary or container)
+- Minimal dependencies (single binary or offline bundle)
 - Effective caching strategies
 - Graceful degradation on shallow clones
 - Explicit offline controls (`PUNCHTRUNK_AIRGAPPED=1` to skip installer downloads, `--trunk-binary` or `PUNCHTRUNK_TRUNK_BINARY` to point at a pre-baked CLI)
@@ -372,42 +362,72 @@ jobs:
 ### Kubernetes Ephemeral Pods
 
 ```yaml
-apiVersion: v1
-kind: Pod
+apiVersion: batch/v1
+kind: Job
 metadata:
   name: punchtrunk-job
 spec:
-  restartPolicy: Never
-  containers:
-    - name: punchtrunk
-      image: ghcr.io/iamjonobo/punchtrunk:latest
-      command: ["/app/punchtrunk"]
-      args: ["--mode", "hotspots", "--base-branch", "origin/main"]
-      volumeMounts:
+  template:
+    spec:
+      restartPolicy: Never
+      volumes:
         - name: workspace
-          mountPath: /workspace
-      workingDir: /workspace
-  volumes:
-    - name: workspace
-      emptyDir: {}
-  initContainers:
-    - name: git-clone
-      image: alpine/git:latest
-      command:
-        - sh
-        - -c
-        - |
-          git clone --depth 100 ${GIT_REPO} /workspace
-          cd /workspace
-          git checkout ${GIT_COMMIT}
-      volumeMounts:
-        - name: workspace
-          mountPath: /workspace
+          emptyDir: {}
+        - name: punchtrunk-bundle
+          emptyDir: {}
+      initContainers:
+        - name: fetch-code
+          image: alpine/git:latest
+          command:
+            - sh
+            - -c
+            - |
+              git clone --depth 100 ${GIT_REPO} /workspace
+              cd /workspace
+              git checkout ${GIT_COMMIT}
+          volumeMounts:
+            - name: workspace
+              mountPath: /workspace
+        - name: unpack-punchtrunk
+          image: cgr.dev/chainguard/wolfi-base:latest
+          command:
+            - sh
+            - -c
+            - |
+              curl -L ${PUNCHTRUNK_BUNDLE_URL} -o /tmp/punchtrunk-offline.tgz
+              bash /workspace/scripts/setup-airgap.sh --bundle /tmp/punchtrunk-offline.tgz --install-dir /opt/punchtrunk --force
+              cp -R /opt/punchtrunk/. /bundle
+          env:
+            - name: PUNCHTRUNK_BUNDLE_URL
+              valueFrom:
+                secretKeyRef:
+                  name: punchtrunk-artifact
+                  key: bundle-url
+          volumeMounts:
+            - name: workspace
+              mountPath: /workspace
+            - name: punchtrunk-bundle
+              mountPath: /bundle
+      containers:
+        - name: punchtrunk
+          image: cgr.dev/chainguard/wolfi-base:latest
+          workingDir: /workspace
+          command:
+            - sh
+            - -c
+            - |
+              source /punchtrunk/punchtrunk-airgap.env
+              punchtrunk --mode fmt,lint,hotspots --base-branch=origin/main
+          volumeMounts:
+            - name: workspace
+              mountPath: /workspace
+            - name: punchtrunk-bundle
+              mountPath: /punchtrunk
 ```
 
 ## Offline & Air-Gapped Environments
 
-PunchTrunk provides an offline bundle workflow so agents can run without external network access. The bundle includes the PunchTrunk binary, a Trunk CLI executable, the repo-specific Trunk configuration, optional cached toolchain assets, and verified checksums.
+PunchTrunk provides an offline bundle workflow so agents can run without external network access. The bundle includes the PunchTrunk binary, a Trunk CLI executable, the repo-specific Trunk configuration, optional cached toolchain assets, and verified checksums. The generated `manifest.json` now also records the pinned CLI version, trunk.yaml checksum, cache source path, and hydration outcome for reproducibility audits.
 
 ### Build the offline bundle
 
@@ -428,6 +448,7 @@ Useful flags include:
 - `--trunk-binary` to reuse a pre-installed Trunk CLI path when building on a staging host.
 - `--cache-dir` to embed an existing `~/.cache/trunk` so linters run without outbound downloads.
 - `--no-cache` to produce a minimal archive when storage is tight.
+- `--skip-hydrate` to disable the default prefetch step (the script issues `trunk fmt --fetch` and `trunk check --fetch` to warm caches when hydration is enabled).
 - `--target-os` / `--target-arch` to fetch the correct Trunk binary for another platform from the same build host.
 - Omitting `--trunk-binary` instructs the script to auto-download the pinned Trunk release that matches `.trunk/trunk.yaml`.
 
@@ -501,58 +522,18 @@ ${PUNCHTRUNK_HOME}/bin/punchtrunk --mode diagnose-airgap \
 - Exits non-zero when any check reports `error`, allowing provisioning scripts to halt before runtime failures
 - Skips installer downloads and other side effects so it is safe to run on staging hosts and production images alike
 
+Follow up with `punchtrunk --mode tool-health` to confirm the pinned Trunk CLI version matches `.trunk/trunk.yaml` and that cached runtimes/linters are present before revoking network access.
+
 ### Bundle contents
 
 - `bin/punchtrunk` – the PunchTrunk CLI the bundle was built from.
 - `trunk/bin/trunk` – the pinned Trunk CLI executable.
 - `trunk/config` – repository Trunk configuration used by PunchTrunk.
 - `trunk/cache` – optional cached toolchain assets for offline execution.
-- `manifest.json` – metadata including creation timestamp and versions.
+- `manifest.json` – metadata including creation timestamp, pinned CLI version, trunk.yaml checksum, cache source path, and hydration status.
 - `checksums.txt` – SHA-256 hashes for every bundled file.
 - `README.txt` – manual setup instructions and environment helpers.
 - `punchtrunk-airgap.env` / `punchtrunk-airgap.ps1` – sourcing scripts that set `PUNCHTRUNK_HOME`, toggle airgapped mode, and prepend the bundled binaries to `PATH`.
-
-## Container-Based Workflows
-
-### Docker Compose
-
-```yaml
-# docker-compose.yml
-version: "3.8"
-
-services:
-  punchtrunk:
-    image: ghcr.io/iamjonobo/punchtrunk:latest
-    volumes:
-      - .:/workspace
-    working_dir: /workspace
-    environment:
-      PUNCHTRUNK_AIRGAPPED: "1" # reuse /app/trunk without downloads
-    command: --mode fmt,lint,hotspots
-```
-
-Usage:
-
-```bash
-docker-compose run --rm punchtrunk
-```
-
-### Makefile Integration
-
-```makefile
-.PHONY: quality hotspots docker-quality
-
-quality:
- punchtrunk --mode fmt,lint,hotspots
-
-hotspots:
- punchtrunk --mode hotspots --base-branch=origin/main
-
-docker-quality:
- docker run --rm -e PUNCHTRUNK_AIRGAPPED=1 -v $(PWD):/workspace -w /workspace \
-  ghcr.io/iamjonobo/punchtrunk:latest \
-    --mode fmt,lint,hotspots
-```
 
 ## Agent Integration
 
@@ -675,7 +656,7 @@ punchtrunk --mode hotspots --base-branch=HEAD~10
 
 ### 6. Resource Limits
 
-**Container resource limits:**
+**Kubernetes resource limits:**
 
 ```yaml
 resources:
@@ -686,9 +667,9 @@ resources:
 
 **Expected resource usage:**
 
-- Memory: < 500 MB for most repos
-- CPU: Scales with file count
-- Disk: < 100 MB (plus repo size)
+- Memory: < 500 MB for most repos (cache-heavy linters may use more)
+- CPU: Scales with file count; two cores keep Trunk responsive
+- Disk: < 100 MB for PunchTrunk/Trunk binaries plus repository size
 
 ## Troubleshooting
 
@@ -740,18 +721,18 @@ punchtrunk --mode lint --trunk-binary=/opt/trunk/bin/trunk
     key: trunk-${{ runner.os }}-${{ hashFiles('.trunk/trunk.yaml') }}
 ```
 
-### Issue: "Container permission errors"
+### Issue: "Workspace permission errors"
 
-**Cause:** Container runs as nonroot, volume permissions
+**Cause:** Runner user cannot write to repo or cache directories
 
 **Solution:**
 
 ```bash
-# Option 1: Run as current user
-docker run --rm --user $(id -u):$(id -g) -v $(pwd):/workspace ...
+# Ensure the workspace is writable
+sudo chown -R $(id -u):$(id -g) .
 
-# Option 2: Fix permissions
-docker run --rm -v $(pwd):/workspace ... sh -c "chown -R nonroot:nonroot /workspace"
+# Or direct PunchTrunk to a writable temp directory
+export PUNCHTRUNK_OUTPUT_ROOT=/tmp/punchtrunk
 ```
 
 ### Issue: "SARIF upload failed"

@@ -9,6 +9,7 @@ A lightweight CLI + CI setup that:
 - Integrates with **Trunk Action** for inline PR annotations
 - Works out-of-the-box on **ephemeral runners** with caching
 - Provides **air-gap diagnostics** via `--mode diagnose-airgap`
+- Surfaces **toolchain drift** with `--mode tool-health` (version + cache verification)
 
 > Status: starter kit. Designed to be hermetic, fast, and agent-friendly.
 > Rebranding note: formerly `trunk-orchestrator`, now published as **PunchTrunk** to reflect the broader workflow focus.
@@ -55,28 +56,6 @@ sudo mv punchtrunk /usr/local/bin/
 
 Windows users can download the `.exe` directly and add it to `PATH`.
 
-### Container Image
-
-```bash
-docker pull ghcr.io/iamjonobo/punchtrunk:latest
-
-# Run in current directory
-docker run --rm -v $(pwd):/workspace -w /workspace \
-  ghcr.io/iamjonobo/punchtrunk:latest \
-  --mode fmt,lint,hotspots
-```
-
-The image now bundles the Trunk CLI at `/app/trunk` and exposes it via `PUNCHTRUNK_TRUNK_BINARY=/app/trunk`, making the container drop-in for air-gapped environments or CI runners without pre-installed tooling.
-
-Container images are signed with [cosign](https://github.com/sigstore/cosign):
-
-```bash
-cosign verify \
-  --certificate-identity-regexp="^https://github.com/IAmJonoBo/PunchTrunk.*" \
-  --certificate-oidc-issuer="https://token.actions.githubusercontent.com" \
-  ghcr.io/iamjonobo/punchtrunk:latest
-```
-
 ### From Source
 
 ```bash
@@ -93,7 +72,7 @@ sudo mv bin/punchtrunk /usr/local/bin/
 1. **Install PunchTrunk** (see [Installation](#installation) above)
 
 2. **Verify Trunk CLI availability**:
-   - The PunchTrunk container and offline bundles already ship with a pinned Trunk binary.
+   - Offline bundles ship with a pinned Trunk binary and helper env files (`punchtrunk-airgap.env` / `.ps1`).
    - On developer laptops you can rely on PunchTrunk's auto-installer or follow the [Trunk installation guide](https://docs.trunk.io/code-quality/setup-and-installation/initialize-trunk) if you prefer manual control.
 3. **Initialise** Trunk in your repo (first time only):
 
@@ -118,7 +97,7 @@ sudo mv bin/punchtrunk /usr/local/bin/
 - **Hold-the-line** by default (changed files only), configurable base branch in `.trunk/trunk.yaml`.
 - **Autofix**: by default only formatters are applied; linter autofix can be enabled with `--autofix=lint`.
 - **Hotspots**: file-level ranking computed from recent git churn and simple complexity (token count); exported at `reports/hotspots.sarif`.
-- **CI**: distroless container build, GitHub Actions workflow, cache examples for ephemeral runners, optional Reviewdog step for inline comments.
+- **CI**: offline bundles, GitHub Actions workflow, cache examples for ephemeral runners, optional Reviewdog step for inline comments.
 - **Polyglot**: Trunk drives the right tools per language; you can add linters via `.trunk/trunk.yaml`.
 
 ---
@@ -138,8 +117,9 @@ PunchTrunk [flags]
 
 Flags:
    --mode=fmt,lint,hotspots   Which phases to run (default: fmt,lint,hotspots). Include
-                              `diagnose-airgap` to emit readiness checks without
-                              running Trunk.
+                              `diagnose-airgap` to emit readiness checks or `tool-health`
+                              to inspect Trunk versions and cache hydration without
+                              executing fmt/lint.
    --autofix=none|fmt|lint|all  Which fixes to apply (default: fmt)
    --base-branch=<git ref>    Base for change detection (default: origin/main)
    --max-procs=<n>            Parallelism cap (default: logical CPUs)
@@ -177,6 +157,9 @@ PUNCHTRUNK_AIRGAPPED=1 ./bin/punchtrunk --mode lint --trunk-binary=/opt/trunk/bi
 # Emit structured logs for ingestion
 ./bin/punchtrunk --mode fmt,lint --json-logs
 
+# Verify bundle hydration and version alignment
+./bin/punchtrunk --mode tool-health
+
 # Redirect tmp usage off the default /tmp mount
 ./bin/punchtrunk --mode hotspots --tmp-dir=/var/punchtrunk/tmp
 
@@ -188,10 +171,10 @@ PUNCHTRUNK_AIRGAPPED=1 ./bin/punchtrunk --mode lint --trunk-binary=/opt/trunk/bi
 - Supply the executable explicitly with `--trunk-binary=/path/to/trunk` or `PUNCHTRUNK_TRUNK_BINARY=/path/to/trunk`. The path is validated for existence and executability before any Trunk command is executed.
 - Cached installs created by PunchTrunk live under `~/.trunk/bin`; reuse that path for future jobs if you pre-bake the toolchain.
 - When the workspace is read-only, hotspot SARIF output automatically falls back to `/tmp/punchtrunk/reports/<file>` and a log line explains the redirect.
-- Build an offline bootstrap bundle with `make offline-bundle` (or `./scripts/build-offline-bundle.sh` for custom paths). The archive contains the PunchTrunk binary, a Trunk CLI executable, `.trunk` config, optional cached toolchain artifacts, a manifest, and SHA-256 checksums so air-gapped agents can verify integrity.
+- Build an offline bootstrap bundle with `make offline-bundle` (or `./scripts/build-offline-bundle.sh` for custom paths). The script now hydrates the Trunk cache before packaging (failing back to warnings when a fetch is unavailable) and records the CLI version, config checksum, hydration status, and source cache path in `manifest.json`. Pass `--skip-hydrate` to opt out when you intentionally want an empty cache.
 - Use `scripts/setup-airgap.sh` (Linux/macOS) or `scripts/setup-airgap.ps1` (Windows) to unpack the bundle, create stable symlinks/wrappers, wire caches, and emit an env file you can source in provisioning jobs.
 - `scripts/build-offline-bundle.sh` accepts `--target-os` and `--target-arch` so you can build archives for any supported platform from a single host, auto-downloading the matching Trunk CLI when not provided.
-- The official container image already sets `PUNCHTRUNK_TRUNK_BINARY=/app/trunk`; combine it with a volume mount and `PUNCHTRUNK_AIRGAPPED=1` to reuse the embedded CLI without network access.
+- Bundle installs persist under the directory you pass to `setup-airgap.*`; add `$(install-dir)/bin` to `PATH` or source the generated env helper so callers resolve the embedded PunchTrunk and Trunk binaries without extra exports.
 - See `docs/INTEGRATION_GUIDE.md` for a step-by-step walkthrough on verifying the bundle, running the setup scripts, and wiring environment variables before running PunchTrunk in sealed networks.
 
 ### Diagnose offline readiness
@@ -205,6 +188,18 @@ punchtrunk --mode diagnose-airgap --sarif-out=/workspace/reports/hotspots.sarif
 - Produces a JSON report on stdout with check summaries (git availability, trunk binary, air-gap env vars, SARIF destination writability)
 - Returns a non-zero exit when blocking errors remain so agents can gate provisioning workflows
 - Skips Trunk installs and other side effects, making it safe to run before network access is revoked
+
+### Inspect toolchain health
+
+`tool-health` inspects the resolved Trunk CLI, parses `.trunk/trunk.yaml`, and verifies that a usable cache exists for each pinned plugin, runtime, and linter:
+
+```bash
+punchtrunk --mode tool-health
+```
+
+- Emits a JSON report (version alignment, cache directory, manifest metadata)
+- Warns (and exits non-zero) when the installed Trunk version differs from `cli.version` or when pinned tools/runtimes are missing from the cache directory
+- Works well with offline bundles to confirm hydration _before_ provisioning new runners
 
 ---
 
@@ -252,14 +247,12 @@ This is a heuristic to prioritise attention, inspired by defect prediction liter
 
 ## Security & supply chain
 
-- **Distroless** container for the CLI runtime (no shell, minimal surface).
-- Optional signing step with **cosign** (keyless OIDC supported) when publishing your image.
-- Pin Trunk CLI version in `.trunk/trunk.yaml` for reproducibility.
+- Offline bundles ship with per-file SHA-256 checksums and a manifest so you can verify integrity before installation.
+- `setup-airgap.sh` / `.ps1` validate optional checksum files and create wrapper scripts that pin `PUNCHTRUNK_TRUNK_BINARY` for reproducible runs.
+- Releases are built in CI with pinned Go and Trunk versions; keep `.trunk/trunk.yaml` committed so updates remain explicit.
 
 References:
 
-- [Distroless images](https://github.com/GoogleContainerTools/distroless)
-- [Docker doc on distroless](https://docs.docker.com/dhi/core-concepts/distroless/)
 - [Cosign](https://github.com/sigstore/cosign)
 - [GitHub SARIF upload](https://docs.github.com/en/code-security/code-scanning/integrating-with-code-scanning/uploading-a-sarif-file-to-github)
 
@@ -308,7 +301,7 @@ PunchTrunk enforces quality gates at each pipeline stage:
 
 - **Pre-commit**: Format, lint, unit tests, build
 - **PR**: All tests pass, E2E validation, security scans, SARIF validation
-- **Release**: Multi-platform builds, container security, performance validation
+- **Release**: Multi-platform builds, offline bundle integrity, performance validation
 
 See [Quality Gates](docs/internal/quality/QUALITY_GATES.md) for the full internal checklist.
 
@@ -321,7 +314,7 @@ PunchTrunk follows a comprehensive deployment pipeline:
 1. **Local Dev** → Format, lint, test, build
 2. **PR CI** → Full validation with E2E tests
 3. **Main CI** → Integration and performance checks
-4. **Release** → Multi-platform builds and container publishing
+4. **Release** → Multi-platform builds, offline bundle publishing, integrity verification
 5. **Post-Release** → Monitoring and validation
 
 See [Deployment Pipeline](docs/internal/delivery/DEPLOYMENT_PIPELINE.md) and [E2E Strategy](docs/internal/delivery/E2E_STRATEGY.md) for details.

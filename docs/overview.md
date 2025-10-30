@@ -4,7 +4,7 @@
 
 PunchTrunk bundles Trunk CLI operations and hotspot analysis inside a single Go binary. The orchestrator keeps formatter and linter execution hermetic while emitting SARIF so CI pipelines stay simple.
 
-> Rebranding: older materials may reference `trunk-orchestrator`; the binary, Docker tags, and documentation now use the PunchTrunk name.
+> Rebranding: older materials may reference `trunk-orchestrator`; the binary, release assets, and documentation now use the PunchTrunk name.
 > Ownership: the project is authored and maintained by **n00tropic**; PunchTrunk is the tool, not the company.
 
 ## Architecture at a Glance
@@ -17,7 +17,7 @@ PunchTrunk bundles Trunk CLI operations and hotspot analysis inside a single Go 
 ## Why It Exists
 
 - Fast linting on ephemeral runners without custom scripts.
-- A single binary that can ship in a distroless container.
+- A single offline bundle that travels with Trunk, configs, and cached toolchains.
 - Consistent hotspot reporting to surface risky files for reviewers.
 
 ## Key Design Principles

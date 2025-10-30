@@ -1186,6 +1186,110 @@ func TestRunDiagnoseAirgapSuccess(t *testing.T) {
 	}
 }
 
+func executeToolHealth(t *testing.T, cfg *Config) (toolHealthReport, error) {
+	t.Helper()
+	if cfg == nil {
+		cfg = &Config{}
+	}
+	cfg.logger = newEventLogger(io.Discard, false)
+
+	r, w, err := os.Pipe()
+	if err != nil {
+		t.Fatalf("pipe: %v", err)
+	}
+	original := os.Stdout
+	os.Stdout = w
+	done := make(chan struct{})
+	var buf bytes.Buffer
+	go func() {
+		_, _ = io.Copy(&buf, r)
+		close(done)
+	}()
+
+	execErr := runToolHealth(context.Background(), cfg)
+	w.Close()
+	os.Stdout = original
+	<-done
+	_ = r.Close()
+
+	var report toolHealthReport
+	if err := json.Unmarshal(buf.Bytes(), &report); err != nil {
+		t.Fatalf("unmarshal tool-health report: %v\n%s", err, buf.String())
+	}
+	return report, execErr
+}
+
+func TestRunToolHealthReportsIssues(t *testing.T) {
+	cacheDir := t.TempDir()
+	cfg := &Config{
+		TrunkVersion:  "trunk version 2.0.0",
+		TrunkCacheDir: cacheDir,
+		TrunkManifest: &bundleManifest{CacheIncluded: true},
+	}
+	cfg.TrunkConfig = &trunkYAML{}
+	cfg.TrunkConfig.CLI.Version = "1.2.3"
+	cfg.TrunkConfig.Plugins.Sources = []trunkPluginSource{{ID: "plugin-a", Ref: "main"}}
+	cfg.TrunkConfig.Runtimes.Enabled = []string{"node@18.0.0"}
+	cfg.TrunkConfig.Lint.Enabled = []string{"eslint@8.0.0"}
+
+	report, err := executeToolHealth(t, cfg)
+	if err == nil {
+		t.Fatalf("expected tool-health to report issues")
+	}
+	if report.Trunk.Status != "mismatch" {
+		t.Fatalf("expected trunk status mismatch, got %s", report.Trunk.Status)
+	}
+	if len(report.PluginSources) == 0 || report.PluginSources[0].Status != "missing" {
+		t.Fatalf("expected plugin cache missing status, got %+v", report.PluginSources)
+	}
+	if len(report.Warnings) == 0 {
+		t.Fatalf("expected warnings for missing cache entries")
+	}
+}
+
+func TestRunToolHealthSuccess(t *testing.T) {
+	cacheDir := t.TempDir()
+	pluginPath := filepath.Join(cacheDir, "plugins", "plugin-a", "main")
+	runtimePath := filepath.Join(cacheDir, "runtimes", "node", "18.17.0")
+	toolPath := filepath.Join(cacheDir, "tools", "eslint", "8.50.0")
+	for _, path := range []string{pluginPath, runtimePath, toolPath} {
+		if err := os.MkdirAll(path, 0o755); err != nil {
+			t.Fatalf("mkdir %s: %v", path, err)
+		}
+	}
+
+	cfg := &Config{
+		TrunkVersion:  "trunk version 1.2.3",
+		TrunkCacheDir: cacheDir,
+		TrunkManifest: &bundleManifest{CacheIncluded: true},
+	}
+	cfg.TrunkConfig = &trunkYAML{}
+	cfg.TrunkConfig.CLI.Version = "1.2.3"
+	cfg.TrunkConfig.Plugins.Sources = []trunkPluginSource{{ID: "plugin-a", Ref: "main"}}
+	cfg.TrunkConfig.Runtimes.Enabled = []string{"node@18.17.0"}
+	cfg.TrunkConfig.Lint.Enabled = []string{"eslint@8.50.0"}
+
+	report, err := executeToolHealth(t, cfg)
+	if err != nil {
+		t.Fatalf("runToolHealth: %v", err)
+	}
+	if report.Trunk.Status != "match" {
+		t.Fatalf("expected trunk status match, got %s", report.Trunk.Status)
+	}
+	if len(report.PluginSources) == 0 || report.PluginSources[0].Status != "hydrated" {
+		t.Fatalf("expected plugin cache hydrated, got %+v", report.PluginSources)
+	}
+	if len(report.Runtimes) == 0 || report.Runtimes[0].Status != "hydrated" {
+		t.Fatalf("expected runtime cache hydrated, got %+v", report.Runtimes)
+	}
+	if len(report.Linters) == 0 || report.Linters[0].Status != "hydrated" {
+		t.Fatalf("expected linter cache hydrated, got %+v", report.Linters)
+	}
+	if len(report.Warnings) != 0 {
+		t.Fatalf("expected no warnings, got %+v", report.Warnings)
+	}
+}
+
 func TestEnsureTrunkAutoInstall(t *testing.T) {
 	if runtime.GOOS == "windows" {
 		t.Skip("auto-install test limited to Unix environments")

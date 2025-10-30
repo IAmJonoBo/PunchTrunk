@@ -4,13 +4,13 @@ _This is a How-to guide._
 
 ## Release Goals
 
-Deliver a reproducible `PunchTrunk` binary and optional Docker image with minimal manual steps.
+Deliver reproducible `PunchTrunk` binaries and offline bundles with minimal manual steps.
 
 ## Prerequisites
 
 - Clean `main` branch with passing CI.
 - Go toolchain aligned with `make build` requirements.
-- Access to container registry if publishing images.
+- Access to GitHub Releases (publish binaries + offline bundles).
 
 ## Steps
 
@@ -33,14 +33,17 @@ Deliver a reproducible `PunchTrunk` binary and optional Docker image with minima
 
    - Ensure `reports/hotspots.sarif` updates and remains valid JSON.
 
-4. **Package Docker Image**
+4. **Build Offline Bundle**
 
    ```bash
-   make docker
-   docker run --rm punchtrunk:local --mode hotspots
+   make offline-bundle
+   ls dist/punchtrunk-offline-*.tar.gz
    ```
 
-   - Confirm the image runs as `nonroot`.
+   - Builder hydrates Trunk caches via `trunk fmt --fetch` / `trunk check --fetch` by default; pass `--skip-hydrate` only when you intentionally want an empty cache.
+   - Verify the archive contains `punchtrunk-airgap.env`, `trunk/`, and checksums.
+   - Inspect `manifest.json` for the expected `trunk_cli_version`, `trunk_config_sha256`, and `hydrate_status` values.
+   - Source the bundle env file and run `punchtrunk --mode tool-health` to confirm pinned runtimes/linters are available offline.
 
 5. **Tag the Release**
 
@@ -51,17 +54,17 @@ Deliver a reproducible `PunchTrunk` binary and optional Docker image with minima
 
    - Update release notes with highlights from commits and note any dependency upgrades (Go, Trunk, plugins).
 
-6. **Sign Artifacts (optional)**
+6. **Sign / verify artifacts (optional)**
 
    ```bash
-   cosign sign --keyless punchtrunk:local
+   shasum -a 256 dist/punchtrunk-*
+   cosign sign-blob --output-signature dist/punchtrunk-offline-linux-amd64.tar.gz.sig dist/punchtrunk-offline-linux-amd64.tar.gz
    ```
 
-   - Record signing digest in the release notes.
+   - Record digests in the release notes so operators can verify downloads.
 
 7. **Publish**
-   - Attach binary and SARIF example to the release entry.
-   - Push Docker image with `docker push <registry>/punchtrunk:<tag>`.
+   - Attach binaries, offline bundles, checksums, and signatures to the GitHub Release entry.
 
 ## Post-Release Checklist
 
@@ -72,5 +75,5 @@ Deliver a reproducible `PunchTrunk` binary and optional Docker image with minima
 ## Maintainability
 
 - Validate Go and Trunk versions before tagging. If versions change, sync documentation (`docs/trunk-config.md`, `docs/internal/workflows/local-dev.md`, `docs/security-supply-chain.md`) and open ADRs when appropriate.
-- Run container and binary scans (for example, `trivy image punchtrunk:local`) to confirm dependencies are current.
+- Run binary scans or SBOM tooling (for example, `trivy fs dist/`) to confirm dependencies are current.
 - Capture notable release learnings in `docs/internal/ROADMAP.md` or follow-up issues to keep the project adaptable.

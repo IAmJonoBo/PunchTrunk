@@ -9,7 +9,7 @@ This index follows the [Diátaxis framework](https://diataxis.fr/), grouping dev
 ## How-to Guides
 
 - [Integration Guide](INTEGRATION_GUIDE.md) — wire PunchTrunk into CI/CD systems, ephemeral runners, and agents.
-- [Releasing PunchTrunk](releasing.md) — publish binaries, containers, and offline bundles.
+- [Releasing PunchTrunk](releasing.md) — publish binaries and offline bundles.
 - [Development Standards](development/REPO_CONVENTIONS.md) — day-to-day workflow expectations for contributors.
 
 ## Explanation

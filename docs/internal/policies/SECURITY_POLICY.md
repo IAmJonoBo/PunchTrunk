@@ -2,12 +2,12 @@
 
 ## Scope
 
-- PunchTrunk is a Go CLI packaged as a binary and optional Docker image. It orchestrates local tooling and produces SARIF reports. All controls apply to source, CI workflows, Docker image, and release artefacts.
+- PunchTrunk is a Go CLI packaged as binaries and offline bundles. It orchestrates local tooling and produces SARIF reports. All controls apply to source, CI workflows, release artefacts, and provisioning scripts.
 
 ## Baseline Controls
 
 - Follow OWASP ASVS Level 2 controls relevant to CLI tooling: input validation, safe subprocess execution, and secure logging.
-- Enforce least privilege: workflows run without elevated permissions; containers execute as `nonroot`.
+- Enforce least privilege: workflows run without elevated permissions; ephemeral runners execute as non-root users.
 - Secrets management: never commit credentials. Use GitHub Actions secrets if integration requires tokens (none currently).
 
 ## Threat Model
@@ -17,8 +17,8 @@
 ## Secure Development Lifecycle
 
 - Require Trunk linting and hotspot scans before merge.
-- Run vulnerability scans (`trivy image punchtrunk:local`, `go list -m all | govulncheck`) prior to releases; document results in release notes.
-- Security-sensitive changes (Trunk config, Dockerfile, SARIF writer) need two maintainer approvals.
+- Run vulnerability scans (`trivy fs dist/`, `go list -m all | govulncheck`) prior to releases; document results in release notes.
+- Security-sensitive changes (Trunk config, setup scripts, SARIF writer) need two maintainer approvals.
 
 ## Reporting & Response
 

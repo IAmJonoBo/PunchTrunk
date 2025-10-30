@@ -39,8 +39,8 @@ PunchTrunk's E2E strategy ensures reliable, repeatable deployments with minimal 
 
 1. **Build Validation**
    - Binary builds on all target platforms
-   - Docker image builds successfully
-   - Container security scan passes (Trivy/similar)
+   - Offline bundle builds successfully
+   - Bundle checksums generated and verified
 2. **E2E Validation**
    - Full E2E suite passes on release branch
    - Performance benchmarks within SLO (10 min p95)
@@ -151,8 +151,8 @@ Release branch CI
 │   ├── linux-arm64
 │   ├── darwin-amd64
 │   └── darwin-arm64
-├── Build Docker image
-├── Container security scan
+├── Build offline bundle
+├── Verify bundle checksums
 ├── Full E2E suite on sample repos
 ├── Performance benchmarks
 └── Generate SBOM
@@ -160,19 +160,18 @@ Release branch CI
 
 ### Stage 4: Release
 
-```
+```text
 GitHub Release
 ├── Create release tag (vX.Y.Z)
 ├── Generate release notes
-├── Upload binaries
-├── Push Docker image
+├── Upload binaries and offline bundles
 ├── Sign artifacts (cosign)
 └── Update documentation
 ```
 
 ### Stage 5: Post-Release Validation
 
-```
+```text
 Monitoring and validation
 ├── Monitor GitHub Code Scanning uploads
 ├── Track CI success rates
@@ -224,8 +223,8 @@ Monitoring and validation
 
 ### Security Requirements
 
-- Distroless container runtime
-- Run as non-root user
+- Offline bundle reproducibility with pinned Trunk CLI
+- Run as non-root user where applicable (CI, ephemeral runners)
 - No secrets in logs or SARIF
 - Regular dependency updates
 - Vulnerability scanning in CI

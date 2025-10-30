@@ -2,8 +2,8 @@
 
 ## Snapshot (C4)
 
-- **Context**: Developers and CI pipelines invoke PunchTrunk to run Trunk formatters/linters and compute hotspots. Neighbouring systems are Git (local or GitHub-hosted) and GitHub Actions, with optional Docker registries when the binary ships in a container.
-- **Containers**: `cmd/punchtrunk` Go binary (CLI) running on dev laptops or CI runners; Trunk CLI toolchain downloaded to `~/.cache/trunk`; git command-line tooling; optional distroless Docker image containing the compiled binary.
+- **Context**: Developers and CI pipelines invoke PunchTrunk to run Trunk formatters/linters and compute hotspots. Neighbouring systems are Git (local or GitHub-hosted) and GitHub Actions, with offline bundles distributed via release assets when pre-provisioning is required.
+- **Containers**: `cmd/punchtrunk` Go binary (CLI) running on dev laptops or CI runners; Trunk CLI toolchain downloaded to `~/.cache/trunk`; git command-line tooling; offline bundle wrapper scripts when runners cannot reach the network.
 - **Components**: environment bootstrapper (`ensureEnvironment`, `installTrunk*`, git fallbacks) that validates explicit binaries and honours `PUNCHTRUNK_AIRGAPPED`; flag parsing and mode orchestration (`parseFlags`, `runModes`); Trunk integration (`runTrunkFmt`, `runTrunkCheck`); hotspot engine (`computeHotspots`, `gitChurn`, `roughComplexity`); SARIF writer (`writeSARIF`).
 - **Trust boundaries**: shell boundary between PunchTrunk and external executables (Trunk, git); filesystem boundary limiting writes to `bin/` and `reports/`; CI boundary where secrets remain owned by GitHub Actions and are not exposed to PunchTrunk.
 
@@ -18,7 +18,7 @@
 
 - **Performance**: CI SLO is <10 minutes for fmt+lint+hotspots. Trunk cache keyed on `.trunk/trunk.yaml` prevents redownloads. Hotspot scoring truncates to top 500 files to bound runtime.
 - **Availability/resilience**: `ensureEnvironment` guarantees required tooling is present (auto-installs Trunk, checks git, validates user-supplied binaries, honours `PUNCHTRUNK_AIRGAPPED`) before work begins; git fallbacks degrade gracefully when history is shallow by warning and skipping files; `context.Context` with timeouts cancels child processes; CLI exits non-zero when Trunk reports errors via shared `exitErr`; SARIF output redirects to `/tmp/punchtrunk/reports` when the repo is read-only.
-- **Security**: Distroless container image reduces attack surface; no network calls beyond Trunk downloads; secrets scanning enabled in Trunk config; SARIF stored locally then uploaded through GitHub’s authenticated action.
+- **Security**: Offline bundles ship with pinned Trunk binaries and checksums; no network calls beyond Trunk downloads; secrets scanning enabled in Trunk config; SARIF stored locally then uploaded through GitHub’s authenticated action.
 - **Observability**: CLI logs summarize each phase; `maybeWarnCompetingTools` surfaces guidance when overlapping formatter/linter configs are detected; SARIF provides structured findings; CI workflow surfaces Trunk annotations inline; future enhancement backlog includes structured JSON logging for hotspots.
 
 ## Interfaces

@@ -24,7 +24,7 @@ _This document defines the quality gates enforced at each stage of the PunchTrun
 
 - **Secrets Detection:** No secrets committed to repository.
 - **Vulnerability Scanning:** `govulncheck` reports no high/critical issues.
-- **Container Security:** Trivy/Grype scan passes before release (no HIGH/CRITICAL).
+- **Offline Bundle Integrity:** Bundles rebuilt, checksums verified, and manifests updated.
 - **CodeQL Scanning:** No new security vulnerabilities introduced.
 - **Dependency Audit:** All dependencies reviewed and up-to-date.
 
@@ -66,7 +66,7 @@ _This document defines the quality gates enforced at each stage of the PunchTrun
 
 - All PR merge gates ✓
 - Performance gates ✓
-- Container security scan ✓
+- Offline bundle integrity check ✓
 - Multi-platform build validation ✓
 - Release documentation ✓
 

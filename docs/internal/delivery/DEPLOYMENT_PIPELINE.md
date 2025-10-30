@@ -13,7 +13,7 @@ _This document describes the complete deployment pipeline for PunchTrunk from de
       │                    │                    │                    │
       ▼                    ▼                    ▼                    ▼
   make build          Unit Tests          Integration          Multi-platform
-  make run            E2E Tests           Performance          Docker publish
+   make run            E2E Tests           Performance          Bundle publish
   go test             Quality Gates       Security scan        GitHub Release
 ```
 
@@ -52,7 +52,7 @@ git push
 - Binary builds successfully
 - Manual validation of changes
 
-### Exit Criteria
+### Local Exit Criteria
 
 - All tests pass locally
 - Code is properly formatted
@@ -93,7 +93,7 @@ git push
 3. **Performance Check** (< 2 min for hotspots)
 4. **Quality Gate Summary** (all gates passed)
 
-### Exit Criteria
+### Pull Request Exit Criteria
 
 - All CI checks pass
 - E2E workflow completes successfully
@@ -112,7 +112,7 @@ git push
 3. **Coverage Report** (upload to coverage service)
 4. **Build Validation** (ensure main is healthy)
 
-### Quality Gates
+### Publish Quality Gates
 
 - All PR gates plus:
 - ✓ No test flakiness detected
@@ -130,7 +130,7 @@ git push
   - Track in daily standup
   - Fix in next PR
 
-### Exit Criteria
+### Publish Exit Criteria
 
 - Main branch is healthy
 - All tests passing
@@ -161,8 +161,9 @@ git push
 
 # 3. Security scan
 - govulncheck
-- Container security scan (Trivy)
+- Offline bundle integrity check (checksum + manifest)
 - Dependency audit
+- punchtrunk --mode tool-health (run against each bundle via punchtrunk-airgap.env)
 ```
 
 #### Phase 2: Build Artifacts
@@ -175,11 +176,14 @@ git push
 - darwin-arm64 (Apple Silicon)
 - windows-amd64
 
-# 2. Docker image
-- Build distroless image
-- Tag with version and 'latest'
+# 2. Offline bundles
+- linux-amd64 bundle
+- linux-arm64 bundle
+- darwin-arm64 bundle
+- windows-amd64 bundle
 - Scan with Trivy
 - Generate SBOM
+- Review manifest hydration_status / warnings (rerun builder or inspect logs if caches were not fully prefetched)
 
 # 3. Checksums
 - Generate SHA256 checksums
@@ -193,9 +197,9 @@ git push
 - Use cosign with keyless OIDC
 - Generate signatures
 
-# 2. Sign container image
-- cosign sign with GitHub OIDC
-- Attach SBOM to image
+# 2. Verify bundle checksums
+- Regenerate SHA-256 sums for each artifact
+- Compare against committed manifest before publish
 ```
 
 #### Phase 4: Publish
@@ -207,12 +211,7 @@ git push
 - Upload checksums
 - Upload signatures
 
-# 2. Container Registry
-- Push to ghcr.io/iamjonobo/punchtrunk:vX.Y.Z
-- Push to ghcr.io/iamjonobo/punchtrunk:latest
-- Verify image pullable
-
-# 3. Update documentation
+# 2. Update documentation
 - Update README with new version
 - Update installation instructions
 - Deploy docs to GitHub Pages (if applicable)
@@ -222,15 +221,15 @@ git push
 
 - ✓ All pre-release validations pass
 - ✓ Builds succeed on all platforms
-- ✓ Container security scan passes
+- ✓ Offline bundle integrity validated
 - ✓ Signatures generated successfully
 - ✓ Release notes complete
 - ✓ Artifacts uploaded successfully
 
-### Exit Criteria
+### Monitoring Exit Criteria
 
 - Release published on GitHub
-- Container images available
+- Offline bundles available
 - Documentation updated
 - Release announcement sent
 - Monitoring configured

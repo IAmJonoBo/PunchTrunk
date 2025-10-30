@@ -13,8 +13,9 @@
 - `computeHotspots` calls `git diff --name-only <base>...HEAD` and `git log --numstat --since=90 days`; missing history or binary files should degrade gracefully (skip rather than crash).
 - `roughComplexity` is the token-per-line heuristic; tweak weighting and scoring before rewriting the heuristic to preserve ranking stability.
 - `writeSARIF` ensures `reports/` exists and produces file-level notes; keep schema constants intact so downstream uploads keep working.
-- Build-time `Version` is injected with `-ldflags -X main.Version`; runtime logic should remain side-effect free to keep the distroless image lean.
-- `ensureEnvironment` now handles bootstrap duties: it verifies `git` exists, auto-installs Trunk (via the official installer script) into `~/.trunk/bin` when missing, normalises any `--trunk-config-dir`, validates explicit binaries when they are provided, respects `PUNCHTRUNK_AIRGAPPED` by skipping downloads, and stores the resolved binary path on `Config.TrunkPath` so subprocesses always hit the right executable. `maybeWarnCompetingTools` scans for common formatter/linter configs (Prettier, Black, ESLint, etc.) and logs guidance so agents can scope PunchTrunk when overlap exists.
+- Build-time `Version` is injected with `-ldflags -X main.Version`; runtime logic should remain side-effect free to keep release bundles predictable.
+- `ensureEnvironment` now handles bootstrap duties: it verifies `git` exists, auto-installs Trunk (via the official installer script) into `~/.trunk/bin` when missing, normalises any `--trunk-config-dir`, validates explicit binaries when they are provided, respects `PUNCHTRUNK_AIRGAPPED` by skipping downloads, auto-discovers `.trunk/trunk.yaml` when no override is supplied, captures bundle metadata, assigns `TRUNK_CACHE_DIR`, and stores the resolved binary path on `Config.TrunkPath` so subprocesses always hit the right executable. `maybeWarnCompetingTools` scans for common formatter/linter configs (Prettier, Black, ESLint, etc.) and logs guidance so agents can scope PunchTrunk when overlap exists.
+- `tool-health` is a read-only mode that inspects the detected Trunk CLI version plus cache hydration for pinned plugins, runtimes, and linters. It emits JSON, returns non-zero on mismatches, and is ideal for verifying offline bundles before production rollout.
 
 ## Developer Workflows
 
@@ -33,7 +34,7 @@
 
 ## Distribution & Extensions
 
-- Docker image builds with `docker build -t punchtrunk:local .` and runs as `nonroot` in `gcr.io/distroless/static:nonroot`; direct any runtime writes to `/tmp` or pre-created paths.
-- `scripts/install.sh` downloads release artifacts (`punchtrunk-<os>-<arch>`), optionally verifies checksums, and sets up `/usr/local/bin`; keep filenames stable for installers.
+- `scripts/build-offline-bundle.sh` produces archives (`punchtrunk-offline-<os>-<arch>.tar.gz`) that embed PunchTrunk, a pinned Trunk CLI, `.trunk` configs, cached toolchains, and helper env scripts; it now hydrates caches via `trunk fmt --fetch` / `trunk check --fetch` by default, captures the CLI version + config checksum in `manifest.json`, and supports `--skip-hydrate` when you need to package an empty cache. Use `scripts/setup-airgap.*` to install bundles on runners.
+- `scripts/install.sh` downloads release artifacts (`punchtrunk-<os>-<arch>`), optionally verifies checksums, and sets up `/usr/local/bin`; keep filenames stable for installers and bundle manifests.
 - Optional Semgrep rules live in `semgrep/`; wire them into `.trunk/trunk.yaml` if you expand lint coverage.
-- Release signing is expected via cosign; update install docs and Dockerfile comments if distribution changes.
+- Release signing is expected via cosign; update install docs and bundle manifests if distribution changes.
