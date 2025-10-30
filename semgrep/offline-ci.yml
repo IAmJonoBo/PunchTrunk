@@ -1,0 +1,31 @@
+rules:
+  - id: py-print-debug
+    languages: [python]
+    message: Debug print detected; consider using logging.
+    pattern: print(...)
+    severity: INFO
+
+  - id: go-avoid-shell-command
+    languages: [go]
+    message: Avoid spawning a shell with exec.Command; execute the target binary directly.
+    severity: WARNING
+    patterns:
+      - pattern-either:
+          - pattern: exec.Command("sh", "-c", ...)
+          - pattern: exec.Command("bash", "-c", ...)
+          - pattern: exec.CommandContext($CTX, "sh", "-c", ...)
+          - pattern: exec.CommandContext($CTX, "bash", "-c", ...)
+    metadata:
+      category: security
+      cwe: CWE-78
+
+  - id: sh-curl-bash-pipe
+    languages: [sh]
+    message: Piping curl output to the shell can mask download failures; prefer explicit download + verify.
+    severity: WARNING
+    patterns:
+      - pattern: |
+          curl ... | sh
+    metadata:
+      category: security
+      cwe: CWE-494

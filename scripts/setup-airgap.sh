@@ -34,18 +34,18 @@ abspath() {
 	if [[ $1 == /* ]]; then
 		printf "%s\n" "$1"
 	else
-		printf "%s/%s\n" "$PWD" "$1"
+		printf "%s/%s\n" "${PWD}" "$1"
 	fi
 }
 
 compute_sha256() {
 	local target="$1"
 	if command -v sha256sum >/dev/null 2>&1; then
-		sha256sum "$target" | awk '{print $1}'
+		sha256sum "${target}" | awk '{print $1}'
 		return 0
 	fi
 	if command -v shasum >/dev/null 2>&1; then
-		shasum -a 256 "$target" | awk '{print $1}'
+		shasum -a 256 "${target}" | awk '{print $1}'
 		return 0
 	fi
 	printf "error: neither sha256sum nor shasum is available\n" >&2
@@ -101,31 +101,31 @@ while [[ $# -gt 0 ]]; do
 	esac
 done
 
-if [[ -z $bundle ]]; then
+if [[ -z ${bundle} ]]; then
 	printf "error: --bundle is required\n" >&2
 	usage >&2
 	exit 1
 fi
 
-if [[ ! -f $bundle ]]; then
-	printf "error: bundle not found at %s\n" "$bundle" >&2
+if [[ ! -f ${bundle} ]]; then
+	printf "error: bundle not found at %s\n" "${bundle}" >&2
 	exit 1
 fi
 
-bundle="$(abspath "$bundle")"
-install_dir="$(abspath "$install_dir")"
-if [[ -n $env_file ]]; then
-	env_file="$(abspath "$env_file")"
+bundle="$(abspath "${bundle}")"
+install_dir="$(abspath "${install_dir}")"
+if [[ -n ${env_file} ]]; then
+	env_file="$(abspath "${env_file}")"
 else
 	env_file="${install_dir}/punchtrunk-airgap.env"
 fi
 
-if [[ -n $checksum_file ]]; then
-	if [[ ! -f $checksum_file ]]; then
-		printf "error: checksum file not found at %s\n" "$checksum_file" >&2
+if [[ -n ${checksum_file} ]]; then
+	if [[ ! -f ${checksum_file} ]]; then
+		printf "error: checksum file not found at %s\n" "${checksum_file}" >&2
 		exit 1
 	fi
-	checksum_file="$(abspath "$checksum_file")"
+	checksum_file="$(abspath "${checksum_file}")"
 elif [[ -f ${bundle}.sha256 ]]; then
 	checksum_file="$(abspath "${bundle}.sha256")"
 fi
@@ -135,27 +135,36 @@ if ! command -v tar >/dev/null 2>&1; then
 	exit 1
 fi
 
-if [[ -n $checksum_file ]]; then
-	expected="$(awk 'NR==1 {print $1}' "$checksum_file")"
-	actual="$(compute_sha256 "$bundle")"
-	if [[ $expected != "$actual" ]]; then
-		printf "error: checksum mismatch for %s\n" "$bundle" >&2
-		printf "expected: %s\nactual:   %s\n" "$expected" "$actual" >&2
+if [[ -n ${checksum_file} ]]; then
+	expected="$(awk 'NR==1 {print $1}' "${checksum_file}")"
+	actual="$(compute_sha256 "${bundle}")"
+	if [[ ${expected} != "${actual}" ]]; then
+		printf "error: checksum mismatch for %s\n" "${bundle}" >&2
+		printf "expected: %s\nactual:   %s\n" "${expected}" "${actual}" >&2
 		exit 1
 	fi
 fi
 
-mkdir -p "$install_dir"
+mkdir -p "${install_dir}"
 
 workdir="$(tmpdir)"
-trap 'rm -rf "$workdir"' EXIT
+bundle_listing_tmp=""
+trap 'rm -rf "${workdir}"; if [[ -n "${bundle_listing_tmp:-}" && -f "${bundle_listing_tmp}" ]]; then rm -f "${bundle_listing_tmp}"; fi' EXIT
 
-tar -xzf "$bundle" -C "$workdir"
+tar -xzf "${bundle}" -C "${workdir}"
+
+bundle_listing_tmp=$(mktemp)
+if ! find "${workdir}" -mindepth 1 -maxdepth 1 -type d -print >"${bundle_listing_tmp}"; then
+	printf "error: failed to enumerate bundle contents under %s\n" "${workdir}" >&2
+	exit 1
+fi
 
 bundle_paths=()
 while IFS= read -r dir; do
-	bundle_paths+=("$dir")
-done < <(find "$workdir" -mindepth 1 -maxdepth 1 -type d)
+	if [[ -n ${dir} ]]; then
+		bundle_paths+=("${dir}")
+	fi
+done <"${bundle_listing_tmp}"
 
 if [[ ${#bundle_paths[@]} -ne 1 ]]; then
 	printf "error: expected bundle to contain a single root directory, found %d\n" "${#bundle_paths[@]}" >&2
@@ -163,21 +172,21 @@ if [[ ${#bundle_paths[@]} -ne 1 ]]; then
 fi
 
 bundle_root="${bundle_paths[0]}"
-bundle_name="$(basename "$bundle_root")"
+bundle_name="$(basename "${bundle_root}")"
 target_release="${install_dir}/${bundle_name}"
 
-if [[ -e $target_release ]]; then
-	if [[ $force -eq 1 ]]; then
-		rm -rf "$target_release"
+if [[ -e ${target_release} ]]; then
+	if [[ ${force} -eq 1 ]]; then
+		rm -rf "${target_release}"
 	else
-		printf "error: %s already exists (use --force to overwrite)\n" "$target_release" >&2
+		printf "error: %s already exists (use --force to overwrite)\n" "${target_release}" >&2
 		exit 1
 	fi
 fi
 
-mv "$bundle_root" "$target_release"
+mv "${bundle_root}" "${target_release}"
 
-ln -sfn "$target_release" "${install_dir}/current"
+ln -sfn "${target_release}" "${install_dir}/current"
 
 mkdir -p "${install_dir}/bin"
 ln -sfn "${install_dir}/current/bin/punchtrunk" "${install_dir}/bin/punchtrunk"
@@ -188,52 +197,67 @@ ln -sfn "${install_dir}/current/trunk/bin/${trunk_exec}" "${install_dir}/trunk/b
 copy_directory() {
 	local source_dir="$1"
 	local target_dir="$2"
-	if [[ ! -d $source_dir ]]; then
+
+	if [[ ! -d ${source_dir} ]]; then
 		return
 	fi
-	mkdir -p "$target_dir"
-	if [[ -z "$(ls -A "$source_dir" 2>/dev/null)" ]]; then
+
+	mkdir -p "${target_dir}"
+
+	local has_entries=0
+	while IFS= read -r -d '' entry; do
+		if [[ -n ${entry} ]]; then
+			has_entries=1
+			break
+		fi
+	done < <(find "${source_dir}" -mindepth 1 -print0 2>/dev/null || true)
+
+	if ((has_entries == 0)); then
 		return
 	fi
-	tar -C "$source_dir" -cf - . | tar -C "$target_dir" -xf -
+
+	if ! tar -C "${source_dir}" -cf - . | tar -C "${target_dir}" -xf -; then
+		printf "error: failed to copy contents from %s to %s\n" "${source_dir}" "${target_dir}" >&2
+		return 1
+	fi
 }
 
 cache_source="${install_dir}/current/trunk/cache"
 cache_target="${install_dir}/cache/trunk"
 cache_populated=0
-if [[ -d $cache_source ]]; then
-	if [[ -d $cache_target && $force -eq 1 ]]; then
-		rm -rf "$cache_target"
+if [[ -d ${cache_source} ]]; then
+	if [[ -d ${cache_target} && ${force} -eq 1 ]]; then
+		rm -rf "${cache_target}"
 	fi
-	copy_directory "$cache_source" "$cache_target"
+	copy_directory "${cache_source}" "${cache_target}"
 	cache_populated=1
 fi
 
-if [[ $link_cache -eq 1 ]]; then
+if [[ ${link_cache} -eq 1 ]]; then
 	if [[ -z ${HOME-} ]]; then
 		printf "warning: HOME is not set, skipping cache symlink\n" >&2
-	elif [[ -d $cache_target ]]; then
+	elif [[ -d ${cache_target} ]]; then
 		cache_home="${HOME}/.cache"
-		mkdir -p "$cache_home"
+		mkdir -p "${cache_home}"
 		cache_link="${HOME}/.cache/trunk"
-		if [[ -e $cache_link && ! -L $cache_link ]]; then
-			if [[ $force -eq 1 ]]; then
-				rm -rf "$cache_link"
+		if [[ -e ${cache_link} && ! -L ${cache_link} ]]; then
+			if [[ ${force} -eq 1 ]]; then
+				rm -rf "${cache_link}"
 			else
-				printf "warning: %s exists and is not a symlink (use --force to replace)\n" "$cache_link" >&2
+				printf "warning: %s exists and is not a symlink (use --force to replace)\n" "${cache_link}" >&2
 				cache_link=""
 			fi
 		fi
-		if [[ -n $cache_link ]]; then
-			ln -sfn "$cache_target" "$cache_link"
+		if [[ -n ${cache_link} ]]; then
+			ln -sfn "${cache_target}" "${cache_link}"
 		fi
 	else
 		printf "info: bundle did not include a trunk cache; skipping ~/.cache/trunk link\n" >&2
 	fi
 fi
 
-mkdir -p "$(dirname "$env_file")"
-cat >"$env_file" <<EOF
+mkdir -p "$(dirname "${env_file}")"
+cat >"${env_file}" <<EOF
 # shellcheck shell=bash
 # Source this file to configure PunchTrunk for offline execution.
 export PUNCHTRUNK_HOME="${install_dir}/current"
@@ -242,12 +266,12 @@ export PUNCHTRUNK_AIRGAPPED=1
 export PATH="${install_dir}/current/bin:${install_dir}/current/trunk/bin:\${PATH}"
 EOF
 
-printf "Offline PunchTrunk installed at %s\n" "$install_dir"
+printf "Offline PunchTrunk installed at %s\n" "${install_dir}"
 printf "Symlinked punchtrunk binary: %s\n" "${install_dir}/bin/punchtrunk"
-printf "Environment exports written to %s\n" "$env_file"
-if [[ $cache_populated -eq 1 ]]; then
-	printf "Cached trunk assets available at %s\n" "$cache_target"
+printf "Environment exports written to %s\n" "${env_file}"
+if [[ ${cache_populated} -eq 1 ]]; then
+	printf "Cached trunk assets available at %s\n" "${cache_target}"
 fi
-if [[ $link_cache -eq 1 && -d $cache_target && -L ${HOME-}/.cache/trunk ]]; then
-	printf "Linked ~/.cache/trunk -> %s\n" "$cache_target"
+if [[ ${link_cache} -eq 1 && -d ${cache_target} && -L ${HOME-}/.cache/trunk ]]; then
+	printf "Linked ~/.cache/trunk -> %s\n" "${cache_target}"
 fi
