@@ -167,15 +167,15 @@ jobs:
 
           #### Offline Bundle
 
-          Download the archive that matches your platform (e.g. `punchtrunk-offline-linux-amd64.tar.gz`) and extract it on the target host:
+          Download the archive that matches your platform (e.g. `punchtrunk-offline-linux-amd64.tar.gz`) and extract it on the target host. Each bundle now ships environment helpers you can source directly:
 
           ```bash
           tar -xzf punchtrunk-offline-linux-amd64.tar.gz
-          export PUNCHTRUNK_HOME="$(pwd)/punchtrunk-offline-linux-amd64"
-          source "${PUNCHTRUNK_HOME}/punchtrunk-airgap.env"
+          cd punchtrunk-offline-linux-amd64
+          source ./punchtrunk-airgap.env
           ```
 
-          The environment file wires `PUNCHTRUNK_TRUNK_BINARY` and other variables so PunchTrunk runs without additional installs. Binary checksums are provided as `.sha256` files.
+          Windows runners can dot-source `punchtrunk-airgap.ps1` in PowerShell. The helper exports `PUNCHTRUNK_TRUNK_BINARY`, toggles airgapped mode, and prepends bundled binaries to PATH. Binary checksums are provided as `.sha256` files.
 
           ### What's Included
 

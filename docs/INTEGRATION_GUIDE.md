@@ -443,14 +443,12 @@ shasum -a 256 punchtrunk-offline-linux-amd64.tar.gz
 cat punchtrunk-offline-linux-amd64.tar.gz.sha256
 ```
 
-1. Extract and configure environment variables:
+1. Extract the bundle and source the environment helper:
 
 ```bash
 tar -xzf punchtrunk-offline-linux-amd64.tar.gz
-export PUNCHTRUNK_HOME="$(pwd)/punchtrunk-offline-linux-amd64"
-export PATH="${PUNCHTRUNK_HOME}/bin:${PUNCHTRUNK_HOME}/trunk/bin:${PATH}"
-export PUNCHTRUNK_TRUNK_BINARY="${PUNCHTRUNK_HOME}/trunk/bin/trunk"
-export PUNCHTRUNK_AIRGAPPED=1
+cd punchtrunk-offline-linux-amd64
+source ./punchtrunk-airgap.env
 ```
 
 1. Run PunchTrunk as usual, forwarding `--trunk-binary` when scripts need an explicit path:
@@ -459,7 +457,7 @@ export PUNCHTRUNK_AIRGAPPED=1
 ${PUNCHTRUNK_HOME}/bin/punchtrunk --mode hotspots --base-branch HEAD~1 --trunk-binary "${PUNCHTRUNK_TRUNK_BINARY}"
 ```
 
-The bundle ships a `README.txt` that mirrors these exports if you prefer to copy/paste. When you install with `setup-airgap.sh` or `setup-airgap.ps1`, an env file (`punchtrunk-airgap.env` / `punchtrunk-airgap.ps1`) is generated automatically for sourcing.
+The bundle ships `punchtrunk-airgap.env` (POSIX shells) and `punchtrunk-airgap.ps1` (PowerShell) alongside `README.txt`. When you install with `setup-airgap.sh` or `setup-airgap.ps1`, the scripts reuse the same helpers and emit them in the installation directory for consistency.
 
 ### Provision with setup scripts
 
@@ -511,7 +509,8 @@ ${PUNCHTRUNK_HOME}/bin/punchtrunk --mode diagnose-airgap \
 - `trunk/cache` – optional cached toolchain assets for offline execution.
 - `manifest.json` – metadata including creation timestamp and versions.
 - `checksums.txt` – SHA-256 hashes for every bundled file.
-- `README.txt` – manual setup instructions and environment exports.
+- `README.txt` – manual setup instructions and environment helpers.
+- `punchtrunk-airgap.env` / `punchtrunk-airgap.ps1` – sourcing scripts that set `PUNCHTRUNK_HOME`, toggle airgapped mode, and prepend the bundled binaries to `PATH`.
 
 ## Container-Based Workflows
 

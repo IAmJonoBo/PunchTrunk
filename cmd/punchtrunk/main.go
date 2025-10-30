@@ -1245,6 +1245,8 @@ func airgapMode() bool {
 	return v == "1" || v == "true" || v == "yes"
 }
 
+var installTrunkFunc = installTrunk
+
 func ensureTrunk(ctx context.Context, cfg *Config) (string, error) {
 	logger := defaultLogger
 	if cfg != nil {
@@ -1270,7 +1272,7 @@ func ensureTrunk(ctx context.Context, cfg *Config) (string, error) {
 	if cfg != nil && cfg.Verbose {
 		logger.Infof("Trunk CLI not found in PATH. Attempting automatic install...")
 	}
-	if err := installTrunk(ctx, cfg != nil && cfg.Verbose, logger); err != nil {
+	if err := installTrunkFunc(ctx, cfg != nil && cfg.Verbose, logger); err != nil {
 		return "", fmt.Errorf("auto-install trunk: %w", err)
 	}
 	if home, err := os.UserHomeDir(); err == nil {

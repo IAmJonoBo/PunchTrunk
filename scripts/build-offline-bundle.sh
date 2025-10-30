@@ -25,32 +25,31 @@ Options:
 EOF
 }
 
-
 # Defaults for target platform
 TARGET_OS=""
 TARGET_ARCH=""
 trunk_exec="trunk"
 case "$(uname -s)" in
-	MINGW* | MSYS* | CYGWIN* | Windows_NT)
-		trunk_exec="trunk.exe"
-		TARGET_OS="windows"
-		;;
-	Darwin*)
-		trunk_exec="trunk"
-		TARGET_OS="darwin"
-		;;
-	Linux*)
-		trunk_exec="trunk"
-		TARGET_OS="linux"
-		;;
-	*)
-		trunk_exec="trunk"
-		;;
+MINGW* | MSYS* | CYGWIN* | Windows_NT)
+	trunk_exec="trunk.exe"
+	TARGET_OS="windows"
+	;;
+Darwin*)
+	trunk_exec="trunk"
+	TARGET_OS="darwin"
+	;;
+Linux*)
+	trunk_exec="trunk"
+	TARGET_OS="linux"
+	;;
+*)
+	trunk_exec="trunk"
+	;;
 esac
 TARGET_ARCH="$(uname -m | tr '[:upper:]' '[:lower:]')"
-if [[ "$TARGET_ARCH" == "x86_64" || "$TARGET_ARCH" == "amd64" ]]; then
+if [[ $TARGET_ARCH == "x86_64" || $TARGET_ARCH == "amd64" ]]; then
 	TARGET_ARCH="amd64"
-elif [[ "$TARGET_ARCH" == "aarch64" || "$TARGET_ARCH" == "arm64" ]]; then
+elif [[ $TARGET_ARCH == "aarch64" || $TARGET_ARCH == "arm64" ]]; then
 	TARGET_ARCH="arm64"
 fi
 
@@ -125,48 +124,47 @@ abspath() {
 	fi
 }
 
+PUNCHTRUNK_BINARY="$(abspath "$PUNCHTRUNK_BINARY")"
+CONFIG_DIR="$(abspath "$CONFIG_DIR")"
+CACHE_DIR="$(abspath "$CACHE_DIR")"
+OUTPUT_DIR="$(abspath "$OUTPUT_DIR")"
 
-	PUNCHTRUNK_BINARY="$(abspath "$PUNCHTRUNK_BINARY")"
-	CONFIG_DIR="$(abspath "$CONFIG_DIR")"
-	CACHE_DIR="$(abspath "$CACHE_DIR")"
-	OUTPUT_DIR="$(abspath "$OUTPUT_DIR")"
-
-	# If trunk binary not provided, auto-download for target platform
-	if [[ -z "${TRUNK_BINARY:-}" ]]; then
-		# Determine Trunk version from .trunk/trunk.yaml if present
-		TRUNK_VERSION="1.25.0"
-		if [[ -f "$CONFIG_DIR/trunk.yaml" ]]; then
-			v=$(grep -E '^\s*version:' "$CONFIG_DIR/trunk.yaml" | head -1 | awk '{print $2}')
-			if [[ -n "$v" ]]; then
-				TRUNK_VERSION="$v"
-			fi
-		fi
-		# Map arch for Trunk download
-		trunk_arch="$TARGET_ARCH"
-		if [[ "$TARGET_OS" == "darwin" && "$trunk_arch" == "amd64" ]]; then
-			trunk_arch="x86_64"
-		elif [[ "$TARGET_OS" == "linux" && "$trunk_arch" == "amd64" ]]; then
-			trunk_arch="x86_64"
-		elif [[ "$TARGET_OS" == "linux" && "$trunk_arch" == "arm64" ]]; then
-			trunk_arch="arm64"
-		fi
-		# Compose download URL
-		if [[ "$TARGET_OS" == "windows" ]]; then
-			trunk_url="https://trunk.io/releases/${TRUNK_VERSION}/trunk-${TRUNK_VERSION}-windows-x86_64.zip"
-			trunk_exec="trunk.exe"
-			trunk_tmp="$(mktemp -d)"
-			curl -Ls "$trunk_url" -o "$trunk_tmp/trunk.zip"
-			unzip -q "$trunk_tmp/trunk.zip" -d "$trunk_tmp"
-			TRUNK_BINARY="$trunk_tmp/trunk.exe"
-		else
-			trunk_url="https://trunk.io/releases/${TRUNK_VERSION}/trunk-${TRUNK_VERSION}-${TARGET_OS}-${trunk_arch}.tar.gz"
-			trunk_tmp="$(mktemp -d)"
-			curl -Ls "$trunk_url" | tar -xz -C "$trunk_tmp"
-			TRUNK_BINARY="$trunk_tmp/trunk"
+# If trunk binary not provided, auto-download for target platform
+if [[ -z ${TRUNK_BINARY-} ]]; then
+	# Determine Trunk version from .trunk/trunk.yaml if present
+	TRUNK_VERSION="1.25.0"
+	if [[ -f "$CONFIG_DIR/trunk.yaml" ]]; then
+		v=$(grep -E '^\s*version:' "$CONFIG_DIR/trunk.yaml" | head -1 | awk '{print $2}')
+		if [[ -n $v ]]; then
+			TRUNK_VERSION="$v"
 		fi
 	fi
+	# Map arch for Trunk download
+	trunk_arch="$TARGET_ARCH"
+	if [[ $TARGET_OS == "darwin" && $trunk_arch == "amd64" ]]; then
+		trunk_arch="x86_64"
+	elif [[ $TARGET_OS == "linux" && $trunk_arch == "amd64" ]]; then
+		trunk_arch="x86_64"
+	elif [[ $TARGET_OS == "linux" && $trunk_arch == "arm64" ]]; then
+		trunk_arch="arm64"
+	fi
+	# Compose download URL
+	if [[ $TARGET_OS == "windows" ]]; then
+		trunk_url="https://trunk.io/releases/${TRUNK_VERSION}/trunk-${TRUNK_VERSION}-windows-x86_64.zip"
+		trunk_exec="trunk.exe"
+		trunk_tmp="$(mktemp -d)"
+		curl -Ls "$trunk_url" -o "$trunk_tmp/trunk.zip"
+		unzip -q "$trunk_tmp/trunk.zip" -d "$trunk_tmp"
+		TRUNK_BINARY="$trunk_tmp/trunk.exe"
+	else
+		trunk_url="https://trunk.io/releases/${TRUNK_VERSION}/trunk-${TRUNK_VERSION}-${TARGET_OS}-${trunk_arch}.tar.gz"
+		trunk_tmp="$(mktemp -d)"
+		curl -Ls "$trunk_url" | tar -xz -C "$trunk_tmp"
+		TRUNK_BINARY="$trunk_tmp/trunk"
+	fi
+fi
 
-	TRUNK_BINARY="$(abspath "$TRUNK_BINARY")"
+TRUNK_BINARY="$(abspath "$TRUNK_BINARY")"
 
 if [[ ! -f $PUNCHTRUNK_BINARY ]]; then
 	printf "error: PunchTrunk binary not found at %s\n" "$PUNCHTRUNK_BINARY" >&2
@@ -274,18 +272,70 @@ Contents:
 - trunk/cache: Optional cached toolchain assets (present when generated on a machine with Trunk cache).
 - manifest.json: Metadata about the bundle.
 - checksums.txt: SHA-256 checksums for bundle contents.
+- punchtrunk-airgap.env / punchtrunk-airgap.ps1: Convenience environment exports for POSIX shells and PowerShell.
 
 Usage:
 1. Extract this archive on the target host.
-2. Export PATH entries:
-    export PUNCHTRUNK_HOME="\$(pwd)/${bundle_root_name}"
-    export PATH="\${PUNCHTRUNK_HOME}/bin:\${PUNCHTRUNK_HOME}/trunk/bin:\${PATH}"
-3. For air-gapped runs, add:
-    export PUNCHTRUNK_AIRGAPPED=1
-    export PUNCHTRUNK_TRUNK_BINARY="\${PUNCHTRUNK_HOME}/trunk/bin/${trunk_exec}"
-4. Run PunchTrunk with your desired modes.
+2. Source the environment helper for your shell:
+	# POSIX shells (bash, zsh)
+	source ./punchtrunk-airgap.env
+
+	# PowerShell
+	. ./punchtrunk-airgap.ps1
+3. Run PunchTrunk with your desired modes.
 
 Checksums listed in checksums.txt can be verified with sha256sum or shasum -a 256.
+EOF
+
+airgap_env_path="${bundle_root}/punchtrunk-airgap.env"
+cat >"$airgap_env_path" <<EOF
+# shellcheck shell=bash
+__punchtrunk_bundle_dir="\$(cd "\$(dirname "\${BASH_SOURCE[0]:-$0}")" && pwd)"
+if [[ -z "\${PUNCHTRUNK_HOME:-}" ]]; then
+	export PUNCHTRUNK_HOME="\${__punchtrunk_bundle_dir}"
+fi
+export PUNCHTRUNK_TRUNK_BINARY="\${PUNCHTRUNK_HOME}/trunk/bin/${trunk_exec}"
+export PUNCHTRUNK_AIRGAPPED="\${PUNCHTRUNK_AIRGAPPED:-1}"
+__punchtrunk_bin="\${PUNCHTRUNK_HOME}/bin"
+__punchtrunk_trunk="\${PUNCHTRUNK_HOME}/trunk/bin"
+case ":\${PATH}:" in
+	*":\${__punchtrunk_bin}:"*) ;;
+	*) PATH="\${__punchtrunk_bin}:\${PATH}" ;;
+esac
+case ":\${PATH}:" in
+	*":\${__punchtrunk_trunk}:"*) ;;
+	*) PATH="\${__punchtrunk_trunk}:\${PATH}" ;;
+esac
+export PATH
+unset __punchtrunk_bin __punchtrunk_trunk
+unset __punchtrunk_bundle_dir
+EOF
+
+airgap_ps1_path="${bundle_root}/punchtrunk-airgap.ps1"
+cat >"$airgap_ps1_path" <<EOF
+# PowerShell environment helper for PunchTrunk offline bundles
+
+
+\$bundleDir = Split-Path -Parent \$MyInvocation.MyCommand.Definition
+if (-not \$env:PUNCHTRUNK_HOME) {
+	\$env:PUNCHTRUNK_HOME = \$bundleDir
+}
+\$env:PUNCHTRUNK_TRUNK_BINARY = Join-Path \$env:PUNCHTRUNK_HOME "trunk/bin/${trunk_exec}"
+if (-not \$env:PUNCHTRUNK_AIRGAPPED) {
+	\$env:PUNCHTRUNK_AIRGAPPED = "1"
+}
+\$binPath = Join-Path \$env:PUNCHTRUNK_HOME "bin"
+\$trunkPath = Join-Path \$env:PUNCHTRUNK_HOME "trunk/bin"
+\$orderedPaths = @()
+foreach (\$p in @(\$binPath, \$trunkPath) + (\$env:PATH -split ';')) {
+	if ([string]::IsNullOrWhiteSpace(\$p)) {
+		continue
+	}
+	if (-not (\$orderedPaths -contains \$p)) {
+		\$orderedPaths += \$p
+	}
+}
+\$env:PATH = (\$orderedPaths -join ';')
 EOF
 
 compute_sha256() {

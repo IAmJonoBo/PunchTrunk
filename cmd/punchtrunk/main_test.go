@@ -123,6 +123,7 @@ func TestEnsureEnvironmentAirgappedRequiresBinary(t *testing.T) {
 	}
 	toolDir := prepareToolchainDir(t, false)
 	t.Setenv("PATH", toolDir)
+	t.Setenv("HOME", t.TempDir())
 	t.Setenv("PUNCHTRUNK_AIRGAPPED", "1")
 	cfg := &Config{Autofix: "fmt"}
 	err := ensureEnvironment(context.Background(), cfg)
@@ -140,6 +141,7 @@ func TestEnsureEnvironmentAirgappedWithBinary(t *testing.T) {
 	}
 	toolDir := prepareToolchainDir(t, true)
 	t.Setenv("PATH", toolDir)
+	t.Setenv("HOME", t.TempDir())
 	t.Setenv("PUNCHTRUNK_AIRGAPPED", "1")
 	cfg := &Config{Autofix: "fmt"}
 	if err := ensureEnvironment(context.Background(), cfg); err != nil {
@@ -148,6 +150,38 @@ func TestEnsureEnvironmentAirgappedWithBinary(t *testing.T) {
 	expected := filepath.Join(toolDir, trunkExecutableName())
 	if cfg.TrunkPath != expected {
 		t.Fatalf("expected trunk path %s, got %s", expected, cfg.TrunkPath)
+	}
+}
+
+func TestEnsureTrunkAutoInstallUsesInstallerHook(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("auto-install test relies on POSIX executable stubs")
+	}
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	// Provide a PATH that definitely lacks trunk so ensureTrunk triggers the installer.
+	toolDir := t.TempDir()
+	t.Setenv("PATH", toolDir)
+	original := installTrunkFunc
+	t.Cleanup(func() { installTrunkFunc = original })
+	called := false
+	installTrunkFunc = func(ctx context.Context, verbose bool, logger *eventLogger) error {
+		called = true
+		dir := filepath.Join(home, ".trunk", "bin")
+		_ = os.MkdirAll(dir, 0o755)
+		makeTrunkStub(t, dir)
+		return nil
+	}
+	got, err := ensureTrunk(context.Background(), &Config{})
+	if err != nil {
+		t.Fatalf("ensureTrunk: %v", err)
+	}
+	if !called {
+		t.Fatalf("expected installer hook to be invoked")
+	}
+	expected := filepath.Join(home, ".trunk", "bin", trunkExecutableName())
+	if got != expected {
+		t.Fatalf("expected trunk path %s, got %s", expected, got)
 	}
 }
 
@@ -229,6 +263,7 @@ func TestBuildDryRunPlan(t *testing.T) {
 
 func TestBuildDryRunPlanMissingBinary(t *testing.T) {
 	t.Setenv("PATH", t.TempDir())
+	t.Setenv("HOME", t.TempDir())
 	cfg := &Config{Modes: []string{"fmt"}}
 	plan, err := buildDryRunPlan(cfg)
 	if err != nil {
