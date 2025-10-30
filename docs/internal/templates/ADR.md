@@ -1,16 +1,51 @@
-# {ADR-NNN}: Title
+# ADR-{NNN}: Title
 
-_Status:_ Proposed | Accepted | Superseded by {NNN}  
-_Date:_ YYYY‑MM‑DD
+Status: Proposed | Accepted | Rejected | Superseded by ADR-{NNN}
+Date: YYYY-MM-DD
+Deciders: Name1, Name2
+Consulted: Stakeholder1, Stakeholder2
+Tags: domain, topic
 
 ## Context
 
-<Describe the forces and background informing this decision.>
+<Summarise the forces and background that make a decision necessary.>
+
+## Problem Statement
+
+<Clarify the problem or opportunity this ADR addresses.>
+
+## Decision Drivers
+
+- <Driver 1>
+- <Driver 2>
+
+## Considered Options
+
+- <Option A>
+- <Option B>
+- <Option C>
 
 ## Decision
 
-<State the decision in full sentences.>
+<Document the option chosen and the rationale for selecting it.>
 
 ## Consequences
 
-<List positive and negative outcomes, follow-up actions, and trade-offs.>
+### Positive
+
+- <Benefit 1>
+- <Benefit 2>
+
+### Negative
+
+- <Trade-off 1>
+- <Trade-off 2>
+
+## Follow-up
+
+- <Task or mitigation item>
+- <Measurement or review cadence>
+
+## References
+
+- <Link to supporting documents, issues, pull requests>

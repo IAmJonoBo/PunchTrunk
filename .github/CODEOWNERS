@@ -1,0 +1,14 @@
+# CODEOWNERS keeps reviewers aligned with the areas they maintain.
+# Patterns are matched top-to-bottom; leave the catch-all entry last.
+
+# Documentation and process guides
+/docs/** @IAmJonoBo
+
+# Go source and command entrypoints
+/cmd/** @IAmJonoBo
+
+# Operational scripts and tooling
+/scripts/** @IAmJonoBo
+
+# Default owners for everything else
+* @IAmJonoBo
