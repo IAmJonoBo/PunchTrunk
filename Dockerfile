@@ -5,7 +5,7 @@ COPY . .
 RUN CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -o /out/punchtrunk ./cmd/punchtrunk
 
 # Download Trunk CLI (version from .trunk/trunk.yaml)
-FROM alpine:3.19 AS trunkcli
+FROM alpine:3.22 AS trunkcli
 WORKDIR /trunk
 SHELL ["/bin/ash", "-eo", "pipefail", "-c"]
 COPY .trunk/trunk.yaml ./trunk.yaml
