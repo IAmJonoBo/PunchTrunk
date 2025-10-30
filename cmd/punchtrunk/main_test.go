@@ -4,15 +4,19 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"flag"
 	"fmt"
 	"io"
+	"net/http"
 	"os"
 	"os/exec"
 	"path/filepath"
 	"runtime"
 	"slices"
 	"strings"
+	"sync"
+	"syscall"
 	"testing"
 	"time"
 )
@@ -147,6 +151,44 @@ func TestEnsureEnvironmentAirgappedWithBinary(t *testing.T) {
 	}
 }
 
+func TestEnsureEnvironmentWithExplicitBinary(t *testing.T) {
+	stubDir := t.TempDir()
+	trunkStub := makeTrunkStub(t, stubDir)
+
+	cfgDir := t.TempDir()
+	if err := os.WriteFile(filepath.Join(cfgDir, "trunk.yaml"), []byte("cli: {}\n"), 0o644); err != nil {
+		t.Fatalf("write trunk.yaml: %v", err)
+	}
+
+	cfg := &Config{
+		TrunkBinary:    trunkStub,
+		TrunkConfigDir: cfgDir,
+		Verbose:        true,
+	}
+	if err := ensureEnvironment(context.Background(), cfg); err != nil {
+		t.Fatalf("ensureEnvironment: %v", err)
+	}
+	if cfg.TrunkPath != trunkStub {
+		t.Fatalf("expected trunk path %s, got %s", trunkStub, cfg.TrunkPath)
+	}
+}
+
+func TestEnsureEnvironmentConfigDirValidation(t *testing.T) {
+	tmp := t.TempDir()
+	cfgPath := filepath.Join(tmp, "not-a-dir")
+	if err := os.WriteFile(cfgPath, []byte("noop"), 0o644); err != nil {
+		t.Fatalf("write config file: %v", err)
+	}
+	cfg := &Config{TrunkConfigDir: cfgPath}
+	err := ensureEnvironment(context.Background(), cfg)
+	if err == nil {
+		t.Fatalf("expected error when trunk-config-dir is a file")
+	}
+	if !strings.Contains(err.Error(), "is not a directory") {
+		t.Fatalf("unexpected error: %v", err)
+	}
+}
+
 func TestBuildDryRunPlan(t *testing.T) {
 	stubDir := t.TempDir()
 	stub := makeTrunkStub(t, stubDir)
@@ -209,7 +251,12 @@ func TestDryRunCLI(t *testing.T) {
 	binary := filepath.Join(binDir, "punchtrunk")
 	build := exec.Command("go", "build", "-o", binary, "./cmd/punchtrunk")
 	build.Dir = root
-	build.Env = append(os.Environ(), "CGO_ENABLED=0")
+	buildTmp := t.TempDir()
+	build.Env = append(os.Environ(),
+		"CGO_ENABLED=0",
+		fmt.Sprintf("GOTMPDIR=%s", buildTmp),
+		fmt.Sprintf("TMPDIR=%s", buildTmp),
+	)
 	if out, err := build.CombinedOutput(); err != nil {
 		t.Fatalf("go build punchtrunk: %v\n%s", err, out)
 	}
@@ -356,6 +403,86 @@ func TestConfigResolveTmpDirRelative(t *testing.T) {
 	}
 }
 
+func TestResolveTmpDirNilConfig(t *testing.T) {
+	var cfg *Config
+	dir, err := cfg.resolveTmpDir()
+	if err != nil {
+		t.Fatalf("resolveTmpDir nil config: %v", err)
+	}
+	if dir == "" {
+		t.Fatalf("expected non-empty temp dir")
+	}
+}
+
+func TestConfigTempDirFallback(t *testing.T) {
+	base := t.TempDir()
+	blocker := filepath.Join(base, "file")
+	if err := os.WriteFile(blocker, []byte("lock"), 0o644); err != nil {
+		t.Fatalf("write blocker file: %v", err)
+	}
+	cfg := &Config{TmpDir: filepath.Join(blocker, "nested")}
+	if _, err := cfg.resolveTmpDir(); err == nil {
+		t.Fatalf("expected resolveTmpDir to fail when path crosses file")
+	}
+	fallback := cfg.tempDir()
+	if fallback == "" {
+		t.Fatalf("expected fallback to system temp dir")
+	}
+	if strings.Contains(fallback, "nested") {
+		t.Fatalf("fallback should not reuse failing tmp dir: %s", fallback)
+	}
+}
+
+type fakeReadOnlyErr struct{}
+
+func (fakeReadOnlyErr) Error() string {
+	return "readonly"
+}
+
+func (fakeReadOnlyErr) Is(target error) bool {
+	_, ok := target.(syscall.Errno)
+	return ok
+}
+
+func TestIsPermissionOrReadOnly(t *testing.T) {
+	t.Run("nil", func(t *testing.T) {
+		if isPermissionOrReadOnly(nil) {
+			t.Fatalf("expected nil error to be false")
+		}
+	})
+	t.Run("permission", func(t *testing.T) {
+		if !isPermissionOrReadOnly(os.ErrPermission) {
+			t.Fatalf("expected os.ErrPermission to be recognized")
+		}
+	})
+	t.Run("pathErrorMatches", func(t *testing.T) {
+		err := &os.PathError{Err: fakeReadOnlyErr{}}
+		if !isPermissionOrReadOnly(err) {
+			t.Fatalf("expected path error to match read-only")
+		}
+	})
+	t.Run("substring", func(t *testing.T) {
+		if !isPermissionOrReadOnly(errors.New("filesystem is read-only")) {
+			t.Fatalf("expected substring match to return true")
+		}
+	})
+	t.Run("other", func(t *testing.T) {
+		if isPermissionOrReadOnly(errors.New("generic")) {
+			t.Fatalf("unexpected true for generic error")
+		}
+	})
+}
+
+func TestInstallTrunkWindowsErrorsWithoutPowershell(t *testing.T) {
+	t.Setenv("PATH", t.TempDir())
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+	defer cancel()
+	err := installTrunkWindows(ctx, false, newEventLogger(io.Discard, false))
+	if err == nil {
+		t.Fatalf("expected installTrunkWindows to fail without powershell")
+	}
+}
+
 func TestOfflineBundleSupportsAirgappedHotspots(t *testing.T) {
 	if runtime.GOOS == "windows" {
 		t.Skip("offline bundle packaging not validated on Windows")
@@ -365,12 +492,18 @@ func TestOfflineBundleSupportsAirgappedHotspots(t *testing.T) {
 	}
 
 	root := repoRoot(t)
+	tmp := t.TempDir()
+	t.Setenv("TMPDIR", tmp)
 
 	binDir := t.TempDir()
 	punchBinary := filepath.Join(binDir, "punchtrunk")
 	build := exec.Command("go", "build", "-o", punchBinary, "./cmd/punchtrunk")
 	build.Dir = root
-	build.Env = append(os.Environ(), "CGO_ENABLED=0")
+	build.Env = append(os.Environ(),
+		"CGO_ENABLED=0",
+		fmt.Sprintf("GOTMPDIR=%s", tmp),
+		fmt.Sprintf("TMPDIR=%s", tmp),
+	)
 	if out, err := build.CombinedOutput(); err != nil {
 		t.Fatalf("go build punchtrunk: %v\n%s", err, out)
 	}
@@ -586,6 +719,29 @@ func TestEventLoggerJSON(t *testing.T) {
 	}
 }
 
+func TestEventLoggerFatalfExits(t *testing.T) {
+	if os.Getenv("TEST_EVENT_LOGGER_FATALF") == "1" {
+		logger := newEventLogger(io.Discard, false)
+		logger.Fatalf("doom")
+		return
+	}
+	cmd := exec.Command(os.Args[0], "-test.run=TestEventLoggerFatalfExits")
+	cmd.Env = append(os.Environ(), "TEST_EVENT_LOGGER_FATALF=1")
+	var buf bytes.Buffer
+	cmd.Stderr = &buf
+	err := cmd.Run()
+	if err == nil {
+		t.Fatalf("expected Fatalf to exit with error")
+	}
+	exitErr, ok := err.(*exec.ExitError)
+	if !ok {
+		t.Fatalf("expected ExitError, got %T (%v)", err, err)
+	}
+	if exitErr.Success() {
+		t.Fatalf("expected non-zero exit from Fatalf")
+	}
+}
+
 func TestConfigLoggerReuse(t *testing.T) {
 	cfg := &Config{JSONLogs: true}
 	logger := cfg.log()
@@ -785,6 +941,287 @@ func TestRunTrunkCheckSetsExitErr(t *testing.T) {
 	if exitErr != err {
 		t.Fatalf("expected exitErr to capture runTrunkCheck error")
 	}
+}
+
+func TestExecuteDryRunOutputsPlan(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("POSIX shell stub required")
+	}
+	stubDir := t.TempDir()
+	stub := makeTrunkStub(t, stubDir)
+	cfg := &Config{
+		Modes:       []string{"fmt"},
+		TrunkBinary: stub,
+		TrunkArgs:   []string{"--filter=test"},
+	}
+	cfg.logger = newEventLogger(io.Discard, false)
+
+	r, w, err := os.Pipe()
+	if err != nil {
+		t.Fatalf("pipe: %v", err)
+	}
+	original := os.Stdout
+	os.Stdout = w
+	done := make(chan struct{})
+	var buf bytes.Buffer
+	go func() {
+		_, _ = io.Copy(&buf, r)
+		close(done)
+	}()
+
+	execErr := executeDryRun(cfg)
+	w.Close()
+	os.Stdout = original
+	<-done
+	if execErr != nil {
+		t.Fatalf("executeDryRun: %v", execErr)
+	}
+	out := buf.String()
+	if !strings.Contains(out, "Dry run summary") {
+		t.Fatalf("expected dry run summary header, got %q", out)
+	}
+	if !strings.Contains(out, "fmt ->") {
+		t.Fatalf("expected fmt command in output, got %q", out)
+	}
+	if !strings.Contains(out, "--filter=test") {
+		t.Fatalf("expected trunk arg in output, got %q", out)
+	}
+}
+
+func TestDryRunPlanPrint(t *testing.T) {
+	var buf bytes.Buffer
+	plan := &dryRunPlan{
+		Trunk: dryRunTrunk{
+			Path:   "/tmp/trunk",
+			Source: "--trunk-binary",
+			Status: "available",
+		},
+		Env:       []string{"TRUNK_CONFIG_DIR=/cfg"},
+		TrunkArgs: []string{"--filter=demo"},
+		SarifOut:  "reports/hotspots.sarif",
+		Modes: []dryRunMode{
+			{Name: "fmt", Command: []string{"/tmp/trunk", "fmt"}, Description: "format"},
+			{Name: "hotspots", Description: "compute hotspots"},
+		},
+		Warnings: []string{"stub warning"},
+		Notes:    []string{"stub note"},
+	}
+	plan.Print(&buf)
+	out := buf.String()
+	checks := []string{
+		"Dry run summary",
+		"Trunk binary: /tmp/trunk (source: --trunk-binary)",
+		"Environment exports:",
+		"Additional trunk arguments",
+		"SARIF output path",
+		"Planned modes:",
+		"Warnings:",
+		"Notes:",
+	}
+	for _, want := range checks {
+		if !strings.Contains(out, want) {
+			t.Fatalf("expected output to contain %q, got %q", want, out)
+		}
+	}
+}
+
+func TestDryRunTrunkSummaryVariants(t *testing.T) {
+	cases := []struct {
+		name  string
+		trunk dryRunTrunk
+		want  string
+	}{
+		{
+			name:  "available",
+			trunk: dryRunTrunk{Status: "available", Path: "/bin/trunk", Source: "PATH"},
+			want:  "/bin/trunk (source: PATH)",
+		},
+		{
+			name:  "auto install",
+			trunk: dryRunTrunk{Status: "missing", AutoInstall: true},
+			want:  "not detected; PunchTrunk would attempt to auto-install trunk",
+		},
+		{
+			name:  "airgapped",
+			trunk: dryRunTrunk{Status: "missing", Airgapped: true},
+			want:  "not detected; provide --trunk-binary or PUNCHTRUNK_TRUNK_BINARY when running offline",
+		},
+		{
+			name:  "default missing",
+			trunk: dryRunTrunk{Status: "missing"},
+			want:  "not detected",
+		},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			if got := tc.trunk.summary(); got != tc.want {
+				t.Fatalf("summary() = %q, want %q", got, tc.want)
+			}
+		})
+	}
+
+	trunk := dryRunTrunk{}
+	if got := trunk.displayCommand(); got != trunkExecutableName() {
+		t.Fatalf("displayCommand default = %q", got)
+	}
+	trunk.Path = "/bin/trunk"
+	if got := trunk.displayCommand(); got != "/bin/trunk" {
+		t.Fatalf("displayCommand explicit = %q", got)
+	}
+}
+
+func TestMaybeWarnCompetingToolsDeduplicates(t *testing.T) {
+	dir := t.TempDir()
+	prev := mustChdir(t, dir)
+	defer func() {
+		_ = os.Chdir(prev)
+	}()
+
+	if err := os.WriteFile(filepath.Join(dir, ".prettierrc"), []byte("{}"), 0o644); err != nil {
+		t.Fatalf("write prettier config: %v", err)
+	}
+
+	conflictMu.Lock()
+	seenConflictMessages = map[string]struct{}{}
+	conflictMu.Unlock()
+	conflictGuidanceOnce = sync.Once{}
+
+	var buf bytes.Buffer
+	cfg := &Config{JSONLogs: true}
+	cfg.logger = newEventLogger(&buf, true)
+
+	maybeWarnCompetingTools("fmt", cfg)
+	output := buf.String()
+	if !strings.Contains(output, "Detected Prettier configuration") {
+		t.Fatalf("expected Prettier warning, got %q", output)
+	}
+	if !strings.Contains(output, "--trunk-arg") {
+		t.Fatalf("expected guidance message, got %q", output)
+	}
+
+	buf.Reset()
+	maybeWarnCompetingTools("fmt", cfg)
+	if buf.Len() != 0 {
+		t.Fatalf("expected deduplicated warnings, got %q", buf.String())
+	}
+}
+
+func TestRunDiagnoseAirgapSuccess(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("diagnose airgap test requires POSIX shell")
+	}
+
+	stubDir := t.TempDir()
+	stub := filepath.Join(stubDir, trunkExecutableName())
+	script := "#!/bin/sh\nif [ \"${1:-}\" = \"--version\" ]; then\n  echo trunk version 1.2.3\n  exit 0\nfi\nexit 0\n"
+	if err := os.WriteFile(stub, []byte(script), 0o755); err != nil {
+		t.Fatalf("write trunk stub: %v", err)
+	}
+
+	cfg := &Config{TrunkBinary: stub}
+	cfg.logger = newEventLogger(io.Discard, true)
+
+	r, w, err := os.Pipe()
+	if err != nil {
+		t.Fatalf("pipe: %v", err)
+	}
+	original := os.Stdout
+	os.Stdout = w
+	done := make(chan struct{})
+	var buf bytes.Buffer
+	go func() {
+		_, _ = io.Copy(&buf, r)
+		close(done)
+	}()
+
+	runErr := runDiagnoseAirgap(cfg)
+	w.Close()
+	os.Stdout = original
+	<-done
+	if runErr != nil {
+		t.Fatalf("runDiagnoseAirgap: %v", runErr)
+	}
+
+	var report DiagnoseReport
+	if err := json.Unmarshal(buf.Bytes(), &report); err != nil {
+		t.Fatalf("unmarshal diagnostics: %v\n%s", err, buf.String())
+	}
+	if report.Summary.Error != 0 {
+		t.Fatalf("expected no errors in report: %+v", report.Summary)
+	}
+}
+
+func TestEnsureTrunkAutoInstall(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("auto-install test limited to Unix environments")
+	}
+
+	script := "#!/bin/sh\nmkdir -p \"$HOME/.trunk/bin\"\ncat <<'EOF' > \"$HOME/.trunk/bin/trunk\"\n#!/bin/sh\nif [ \"${1:-}\" = \"--version\" ]; then\n  echo stub trunk version 0.0.1\nelse\n  echo stub trunk\nfi\nEOF\nchmod +x \"$HOME/.trunk/bin/trunk\"\nexit 0\n"
+
+	oldClient := http.DefaultClient
+	http.DefaultClient = &http.Client{Transport: roundTripFunc(func(req *http.Request) (*http.Response, error) {
+		resp := &http.Response{
+			StatusCode: 200,
+			Body:       io.NopCloser(strings.NewReader(script)),
+			Header:     make(http.Header),
+		}
+		resp.Header.Set("Content-Type", "text/plain")
+		return resp, nil
+	})}
+	t.Cleanup(func() {
+		http.DefaultClient = oldClient
+	})
+
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	t.Setenv("PATH", fmt.Sprintf("%s:%s", t.TempDir(), "/bin:/usr/bin"))
+	t.Setenv("PUNCHTRUNK_AIRGAPPED", "0")
+
+	cfg := &Config{}
+	cfg.logger = newEventLogger(io.Discard, false)
+
+	path, err := ensureTrunk(context.Background(), cfg)
+	if err != nil {
+		t.Fatalf("ensureTrunk: %v", err)
+	}
+	if !strings.HasPrefix(path, home) {
+		t.Fatalf("expected installed trunk under HOME, got %s", path)
+	}
+	if _, err := os.Stat(path); err != nil {
+		t.Fatalf("installed trunk missing: %v", err)
+	}
+}
+
+func TestIsNoHistory(t *testing.T) {
+	cases := map[string]bool{
+		"fatal: your current branch 'main' does not have any commits yet": true,
+		"fatal: bad revision":                     true,
+		"fatal: unknown revision":                 true,
+		"fatal: no such ref":                      true,
+		"fatal: shallow updates were not allowed": true,
+		"some other error":                        false,
+	}
+	for msg, want := range cases {
+		if got := isNoHistory(msg); got != want {
+			t.Fatalf("isNoHistory(%q) = %v, want %v", msg, got, want)
+		}
+	}
+}
+
+func TestEventLoggerError(t *testing.T) {
+	var buf bytes.Buffer
+	logger := newEventLogger(&buf, false)
+	logger.Errorf("problem: %s", "demo")
+	out := buf.String()
+	if !strings.Contains(out, "ERROR: problem: demo") {
+		t.Fatalf("expected error log, got %q", out)
+	}
+}
+
+type roundTripFunc func(*http.Request) (*http.Response, error)
+
+func (f roundTripFunc) RoundTrip(req *http.Request) (*http.Response, error) {
+	return f(req)
 }
 
 func gitInit(t *testing.T, dir string) {
