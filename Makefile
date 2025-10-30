@@ -36,6 +36,10 @@ offline-bundle: build
 	./scripts/build-offline-bundle.sh --output-dir dist
 
 security:
+	@if [ ! -f semgrep/offline-ci.yml ]; then \
+		echo "Error: semgrep config not found at semgrep/offline-ci.yml" >&2; \
+		exit 1; \
+	fi
 	@if command -v semgrep >/dev/null 2>&1; then \
 		semgrep --config=semgrep/offline-ci.yml --metrics=off .; \
 	else \
