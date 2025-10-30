@@ -184,6 +184,6 @@ EOF
   bundle_path="${dist_dir}/${expected_bundle}"
   [ -f "${bundle_path}" ]
 
-  run tar -tf "${bundle_path}" | grep "trunk/bin/trunk.exe"
+  run bash -c "tar -tf \"${bundle_path}\" | grep 'trunk/bin/trunk.exe'"
   [ "$status" -eq 0 ]
 }
