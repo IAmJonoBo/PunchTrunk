@@ -61,6 +61,7 @@ OUTPUT_DIR="${ROOT_DIR}/dist"
 BUNDLE_NAME=""
 PUNCHTRUNK_BINARY="bin/punchtrunk"
 TRUNK_BINARY="${HOME}/.trunk/bin/${trunk_exec}"
+TRUNK_BINARY_USER_SUPPLIED=0
 CACHE_DIR="${HOME}/.cache/trunk"
 CONFIG_DIR="${ROOT_DIR}/.trunk"
 INCLUDE_CACHE=1
@@ -81,10 +82,11 @@ while [[ $# -gt 0 ]]; do
 		PUNCHTRUNK_BINARY="$2"
 		shift 2
 		;;
-	--trunk-binary)
-		TRUNK_BINARY="$2"
-		shift 2
-		;;
+        --trunk-binary)
+                TRUNK_BINARY="$2"
+                TRUNK_BINARY_USER_SUPPLIED=1
+                shift 2
+                ;;
 	--target-os)
 		TARGET_OS="$2"
 		shift 2
@@ -231,36 +233,49 @@ if [[ -f "$CONFIG_DIR/trunk.yaml" ]]; then
 	TRUNK_CLI_VERSION="${TRUNK_CLI_VERSION}" # ensure defined
 fi
 
-# If trunk binary not provided, auto-download for target platform
-if [[ -z ${TRUNK_BINARY-} ]]; then
-	TRUNK_VERSION="${TRUNK_CLI_VERSION:-1.25.0}"
-	# Map arch for Trunk download
-	trunk_arch="$TARGET_ARCH"
-	if [[ $TARGET_OS == "darwin" && $trunk_arch == "amd64" ]]; then
-		trunk_arch="x86_64"
-	elif [[ $TARGET_OS == "linux" && $trunk_arch == "amd64" ]]; then
-		trunk_arch="x86_64"
-	elif [[ $TARGET_OS == "linux" && $trunk_arch == "arm64" ]]; then
-		trunk_arch="arm64"
-	fi
-	# Compose download URL
-	if [[ $TARGET_OS == "windows" ]]; then
-		trunk_url="https://trunk.io/releases/${TRUNK_VERSION}/trunk-${TRUNK_VERSION}-windows-x86_64.zip"
-		trunk_exec="trunk.exe"
-		trunk_tmp="$(mktemp -d)"
-		curl -Ls "$trunk_url" -o "$trunk_tmp/trunk.zip"
-		unzip -q "$trunk_tmp/trunk.zip" -d "$trunk_tmp"
-		TRUNK_BINARY="$trunk_tmp/trunk.exe"
-	else
-		trunk_url="https://trunk.io/releases/${TRUNK_VERSION}/trunk-${TRUNK_VERSION}-${TARGET_OS}-${trunk_arch}.tar.gz"
-		trunk_tmp="$(mktemp -d)"
-		curl -Ls "$trunk_url" | tar -xz -C "$trunk_tmp"
-		TRUNK_BINARY="$trunk_tmp/trunk"
-	fi
+TRUNK_BINARY_SOURCE="user-supplied"
+if [[ $TRUNK_BINARY_USER_SUPPLIED -eq 0 ]]; then
+        TRUNK_BINARY_SOURCE="default"
+fi
+
+download_tmp=""
+
+maybe_download_trunk() {
+        local trunk_version="$1"
+        local os="$2"
+        local arch="$3"
+        local trunk_tmp="$(mktemp -d)"
+        download_tmp="$trunk_tmp"
+        local trunk_url=""
+        local resolved_arch="$arch"
+        if [[ $os == "darwin" && $resolved_arch == "amd64" ]]; then
+                resolved_arch="x86_64"
+        elif [[ $os == "linux" && $resolved_arch == "amd64" ]]; then
+                resolved_arch="x86_64"
+        elif [[ $os == "linux" && $resolved_arch == "arm64" ]]; then
+                resolved_arch="arm64"
+        fi
+        if [[ $os == "windows" ]]; then
+                trunk_url="https://trunk.io/releases/${trunk_version}/trunk-${trunk_version}-windows-x86_64.zip"
+                trunk_exec="trunk.exe"
+                curl -Ls "$trunk_url" -o "$trunk_tmp/trunk.zip"
+                unzip -q "$trunk_tmp/trunk.zip" -d "$trunk_tmp"
+                TRUNK_BINARY="$trunk_tmp/trunk.exe"
+        else
+                trunk_url="https://trunk.io/releases/${trunk_version}/trunk-${trunk_version}-${os}-${resolved_arch}.tar.gz"
+                curl -Ls "$trunk_url" | tar -xz -C "$trunk_tmp"
+                TRUNK_BINARY="$trunk_tmp/trunk"
+        fi
+}
+
+if [[ $TRUNK_BINARY_USER_SUPPLIED -eq 0 && ! -f $TRUNK_BINARY ]]; then
+        TRUNK_VERSION="${TRUNK_CLI_VERSION:-1.25.0}"
+        maybe_download_trunk "$TRUNK_VERSION" "$TARGET_OS" "$TARGET_ARCH"
+        TRUNK_BINARY_SOURCE="auto-downloaded"
 fi
 
 if [[ -z $TRUNK_CLI_VERSION && -n ${TRUNK_VERSION-} ]]; then
-	TRUNK_CLI_VERSION="$TRUNK_VERSION"
+        TRUNK_CLI_VERSION="$TRUNK_VERSION"
 fi
 
 TRUNK_BINARY="$(abspath "$TRUNK_BINARY")"
@@ -275,10 +290,22 @@ if [[ ! -x $PUNCHTRUNK_BINARY ]]; then
 fi
 
 if [[ ! -f $TRUNK_BINARY ]]; then
-	printf "error: trunk binary not found at %s\n" "$TRUNK_BINARY" >&2
-	printf "hint: run 'trunk init', pass --trunk-binary, or let the script auto-download for --target-os/--target-arch\n" >&2
-	exit 1
+        printf "error: trunk binary not found at %s\n" "$TRUNK_BINARY" >&2
+        printf "hint: run 'trunk init', pass --trunk-binary, or let the script auto-download for --target-os/--target-arch\n" >&2
+        exit 1
 fi
+
+case "$TRUNK_BINARY_SOURCE" in
+user-supplied)
+        printf "Using user-supplied trunk binary: %s\n" "$TRUNK_BINARY"
+        ;;
+auto-downloaded)
+        printf "Auto-downloaded trunk binary for %s/%s -> %s\n" "$TARGET_OS" "$TARGET_ARCH" "$TRUNK_BINARY"
+        ;;
+*)
+        printf "Using existing trunk binary: %s\n" "$TRUNK_BINARY"
+        ;;
+esac
 
 if [[ ! -d $CONFIG_DIR ]]; then
 	printf "error: trunk config directory not found at %s\n" "$CONFIG_DIR" >&2
@@ -325,7 +352,7 @@ if [[ -f $OUTPUT_PATH && $FORCE -eq 0 ]]; then
 fi
 
 workdir="$(mktemp -d "${TMPDIR:-/tmp}/punchtrunk-offline.XXXXXX")"
-trap 'rm -rf "$workdir"; if [[ -n "${hydrate_log:-}" && -f "$hydrate_log" ]]; then rm -f "$hydrate_log"; fi' EXIT
+trap 'rm -rf "$workdir"; if [[ -n "${hydrate_log:-}" && -f "$hydrate_log" ]]; then rm -f "$hydrate_log"; fi; if [[ -n "${download_tmp:-}" && -d "$download_tmp" ]]; then rm -rf "$download_tmp"; fi' EXIT
 
 bundle_root_name="${BUNDLE_NAME%.tar.gz}"
 if [[ $bundle_root_name == "$BUNDLE_NAME" ]]; then
