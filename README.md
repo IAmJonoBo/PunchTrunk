@@ -364,13 +364,15 @@ See [Deployment Pipeline](docs/internal/delivery/DEPLOYMENT_PIPELINE.md) and [E2
 For GitHub Copilot agents and CI automation:
 
 ```bash
-# Verify environment is ready
-punchtrunk --mode diagnose-airgap
+# Makefile targets (run 'make help' for full list)
+make validate-env                # Verify environment is ready
+make prep-runner                 # Hydrate caches and run health checks
+make build test                  # Build and test
+make run                         # Run PunchTrunk (fmt,lint,hotspots)
 
-# Check tool versions and cache health
-punchtrunk --mode tool-health --tool-health-format summary
-
-# Run full quality suite
+# Direct PunchTrunk commands
+punchtrunk --mode diagnose-airgap                      # Check air-gap readiness
+punchtrunk --mode tool-health --tool-health-format summary  # Check tool versions
 bash scripts/run-quality-suite.sh --base-branch origin/main --punchtrunk ./bin/punchtrunk
 
 # Individual operations

@@ -415,6 +415,35 @@ punchtrunk --mode hotspots         # Hotspots only
 punchtrunk --mode tool-health      # Validate setup
 ```
 
+### Makefile Targets
+
+PunchTrunk includes agent-friendly Makefile targets:
+
+```bash
+make help          # Display all available targets
+make validate-env  # Validate environment has all required tools
+make prep-runner   # Hydrate caches and run health checks
+make build         # Build PunchTrunk binary
+make test          # Run all tests
+make run           # Build and run PunchTrunk
+make security      # Run Semgrep security scan
+```
+
+Common workflows:
+```bash
+# First time setup
+make validate-env  # Check environment
+make build         # Build binary
+make prep-runner   # Hydrate caches
+
+# Development cycle
+make build test    # Build and test
+make run           # Run PunchTrunk
+
+# CI/CD
+make prep-runner run  # Prepare and execute
+```
+
 ## Further Reading
 
 - [Integration Guide](INTEGRATION_GUIDE.md) - CI/CD setup examples
