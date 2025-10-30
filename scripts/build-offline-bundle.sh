@@ -9,7 +9,7 @@ HYDRATE_WARNINGS_TEXT=""
 HYDRATE_WARNINGS_COUNT=0
 
 usage() {
-	cat <<EOF
+        cat <<EOF
 Usage: ${SCRIPT_NAME} [options]
 
 Build a tarball that bundles PunchTrunk, a Trunk CLI binary, optional cached toolchain
@@ -29,33 +29,62 @@ Options:
 EOF
 }
 
+normalize_os() {
+        local os="${1:-}"
+        os="${os,,}"
+        case "$os" in
+        "")
+                printf '%s' ""
+                ;;
+        darwin | mac | macos)
+                printf '%s' "darwin"
+                ;;
+        linux | gnu/linux)
+                printf '%s' "linux"
+                ;;
+        mingw* | msys* | cygwin* | windows | windows_nt | win*)
+                printf '%s' "windows"
+                ;;
+        *)
+                printf '%s' "$os"
+                ;;
+        esac
+}
+
+normalize_arch() {
+        local arch="${1:-}"
+        arch="${arch,,}"
+        case "$arch" in
+        "")
+                printf '%s' ""
+                ;;
+        x86_64 | amd64)
+                printf '%s' "amd64"
+                ;;
+        aarch64 | arm64)
+                printf '%s' "arm64"
+                ;;
+        *)
+                printf '%s' "$arch"
+                ;;
+        esac
+}
+
 # Defaults for target platform
-TARGET_OS=""
-TARGET_ARCH=""
-trunk_exec="trunk"
-case "$(uname -s)" in
-MINGW* | MSYS* | CYGWIN* | Windows_NT)
-	trunk_exec="trunk.exe"
-	TARGET_OS="windows"
-	;;
-Darwin*)
-	trunk_exec="trunk"
-	TARGET_OS="darwin"
-	;;
-Linux*)
-	trunk_exec="trunk"
-	TARGET_OS="linux"
-	;;
-*)
-	trunk_exec="trunk"
-	;;
-esac
-TARGET_ARCH="$(uname -m | tr '[:upper:]' '[:lower:]')"
-if [[ $TARGET_ARCH == "x86_64" || $TARGET_ARCH == "amd64" ]]; then
-	TARGET_ARCH="amd64"
-elif [[ $TARGET_ARCH == "aarch64" || $TARGET_ARCH == "arm64" ]]; then
-	TARGET_ARCH="arm64"
+HOST_OS="$(normalize_os "$(uname -s)")"
+if [[ -z $HOST_OS ]]; then
+        HOST_OS="$(uname -s | tr '[:upper:]' '[:lower:]')"
 fi
+HOST_ARCH="$(normalize_arch "$(uname -m)")"
+if [[ -z $HOST_ARCH ]]; then
+        HOST_ARCH="$(uname -m | tr '[:upper:]' '[:lower:]')"
+fi
+trunk_exec="trunk"
+if [[ $HOST_OS == "windows" ]]; then
+        trunk_exec="trunk.exe"
+fi
+TARGET_OS="$HOST_OS"
+TARGET_ARCH="$HOST_ARCH"
 
 OUTPUT_DIR="${ROOT_DIR}/dist"
 BUNDLE_NAME=""
@@ -124,14 +153,31 @@ while [[ $# -gt 0 ]]; do
 		usage >&2
 		exit 1
 		;;
-	esac
+        esac
 done
 
+TARGET_OS="$(normalize_os "$TARGET_OS")"
+TARGET_ARCH="$(normalize_arch "$TARGET_ARCH")"
+if [[ -z $TARGET_OS ]]; then
+        TARGET_OS="$HOST_OS"
+fi
+if [[ -z $TARGET_ARCH ]]; then
+        TARGET_ARCH="$HOST_ARCH"
+fi
+if [[ $TARGET_OS == "windows" ]]; then
+        trunk_exec="trunk.exe"
+else
+        trunk_exec="trunk"
+fi
+if [[ $TRUNK_BINARY_USER_SUPPLIED -eq 0 ]]; then
+        TRUNK_BINARY="${HOME}/.trunk/bin/${trunk_exec}"
+fi
+
 abspath() {
-	if [[ $1 == /* ]]; then
-		printf "%s\n" "$1"
-	else
-		printf "%s/%s\n" "$PWD" "$1"
+        if [[ $1 == /* ]]; then
+                printf "%s\n" "$1"
+        else
+                printf "%s/%s\n" "$PWD" "$1"
 	fi
 }
 
@@ -340,9 +386,21 @@ fi
 mkdir -p "$OUTPUT_DIR"
 
 if [[ -z $BUNDLE_NAME ]]; then
-	os="$(uname -s | tr '[:upper:]' '[:lower:]')"
-	arch="$(uname -m | tr '[:upper:]' '[:lower:]')"
-	BUNDLE_NAME="punchtrunk-offline-${os}-${arch}.tar.gz"
+        os="$TARGET_OS"
+        arch="$TARGET_ARCH"
+        if [[ -z $os ]]; then
+                os="$(normalize_os "$(uname -s)")"
+        fi
+        if [[ -z $arch ]]; then
+                arch="$(normalize_arch "$(uname -m)")"
+        fi
+        if [[ -z $os ]]; then
+                os="unknown"
+        fi
+        if [[ -z $arch ]]; then
+                arch="unknown"
+        fi
+        BUNDLE_NAME="punchtrunk-offline-${os}-${arch}.tar.gz"
 fi
 
 OUTPUT_PATH="${OUTPUT_DIR}/${BUNDLE_NAME}"
