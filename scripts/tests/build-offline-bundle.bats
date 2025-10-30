@@ -150,3 +150,40 @@ STUB
   [ "$status" -eq 0 ]
   [[ "$output" == "darwin stub trunk" ]]
 }
+
+@test "default bundle name honours normalized target overrides" {
+  punch_bin="${BATS_TMPDIR}/bin/punchtrunk-target"
+  mkdir -p "$(dirname "${punch_bin}")"
+  build_punchtrunk "${punch_bin}"
+
+  trunk_stub="${BATS_TMPDIR}/trunk-win.exe"
+  cat >"${trunk_stub}" <<'EOF'
+#!/usr/bin/env bash
+echo "stub trunk"
+EOF
+  chmod +x "${trunk_stub}"
+
+  dist_dir="${BATS_TMPDIR}/dist-target"
+  mkdir -p "${dist_dir}"
+
+  run "${REPO_ROOT}/scripts/build-offline-bundle.sh" \
+    --punchtrunk-binary "${punch_bin}" \
+    --config-dir "${REPO_ROOT}/.trunk" \
+    --output-dir "${dist_dir}" \
+    --trunk-binary "${trunk_stub}" \
+    --target-os WINDOWS \
+    --target-arch AARCH64 \
+    --skip-hydrate \
+    --no-cache \
+    --force
+
+  [ "$status" -eq 0 ] || { echo "$output"; return 1; }
+  expected_bundle="punchtrunk-offline-windows-arm64.tar.gz"
+  [[ "$output" == *"Bundle created: ${dist_dir}/${expected_bundle}"* ]]
+
+  bundle_path="${dist_dir}/${expected_bundle}"
+  [ -f "${bundle_path}" ]
+
+  run tar -tf "${bundle_path}" | grep "trunk/bin/trunk.exe"
+  [ "$status" -eq 0 ]
+}
