@@ -20,6 +20,23 @@ jobs:
         with:
           path: ~/.cache/trunk
           key: trunk-${{ runner.os }}-${{ hashFiles('.trunk/trunk.yaml') }}
+          restore-keys: |
+            trunk-${{ runner.os }}-
+
+      # Install Trunk CLI explicitly for ephemeral runners
+      - name: Install Trunk CLI
+        run: |
+          curl https://get.trunk.io -fsSL | bash -s -- -y
+          echo "${HOME}/.trunk/bin" >> $GITHUB_PATH
+        env:
+          TRUNK_INIT_NO_ANALYTICS: "1"
+          TRUNK_TELEMETRY_OPTOUT: "1"
+
+      # Verify Trunk installation
+      - name: Verify Trunk CLI
+        run: |
+          trunk --version
+          echo "✓ Trunk CLI is available"
 
       # Trunk meta-linter annotations
       - name: Trunk Check (annotations)
@@ -36,6 +53,54 @@ jobs:
         run: |
           mkdir -p bin
           go build -o bin/punchtrunk ./cmd/punchtrunk
+
+      # Validate all required tools are available
+      - name: Validate tool provisioning
+        run: |
+          echo "=== Validating Tool Provisioning ==="
+          echo ""
+          
+          # Check git
+          if command -v git >/dev/null 2>&1; then
+            echo "✓ git: $(git --version)"
+          else
+            echo "❌ git: NOT FOUND"
+            exit 1
+          fi
+          
+          # Check trunk
+          if command -v trunk >/dev/null 2>&1; then
+            echo "✓ trunk: $(trunk --version)"
+          else
+            echo "❌ trunk: NOT FOUND"
+            exit 1
+          fi
+          
+          # Check go
+          if command -v go >/dev/null 2>&1; then
+            echo "✓ go: $(go version)"
+          else
+            echo "❌ go: NOT FOUND"
+            exit 1
+          fi
+          
+          # Check PunchTrunk binary
+          if [ -x ./bin/punchtrunk ]; then
+            echo "✓ punchtrunk: $(./bin/punchtrunk --version)"
+          else
+            echo "❌ punchtrunk: NOT FOUND or not executable"
+            exit 1
+          fi
+          
+          # Check Python (for Semgrep)
+          if command -v python3 >/dev/null 2>&1; then
+            echo "✓ python3: $(python3 --version)"
+          else
+            echo "⚠ python3: NOT FOUND (will be installed later)"
+          fi
+          
+          echo ""
+          echo "✅ All required tools are provisioned and accessible"
 
       - name: Runner preflight (hydrate + tool-health)
         run: |
