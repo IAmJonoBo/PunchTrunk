@@ -17,6 +17,7 @@
 ## Secure Development Lifecycle
 
 - Require Trunk linting and hotspot scans before merge.
+- Run Semgrep security scans (`make security` or `semgrep --config=semgrep/offline-ci.yml`) on all PRs to detect common security issues including shell command injection, unsafe patterns, and debug code.
 - Run vulnerability scans (`trivy fs dist/`, `go list -m all | govulncheck`) prior to releases; document results in release notes.
 - Security-sensitive changes (Trunk config, setup scripts, SARIF writer) need two maintainer approvals.
 
