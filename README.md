@@ -206,6 +206,7 @@ punchtrunk --mode tool-health
 ## CI (GitHub Actions)
 
 - Inline annotations via **trunk-io/trunk-action**.
+- `scripts/prep-runner.sh` hydrates Trunk caches, runs `tool-health`, and emits a summary artifact so sealed runners retain context even when fetches fail.
 - Optional **SARIF upload** for hotspots (`reports/hotspots.sarif`).
 - Ephemeral-friendly caches: Trunk tool cache + Go build cache.
 

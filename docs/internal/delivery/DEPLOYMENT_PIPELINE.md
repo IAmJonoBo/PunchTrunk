@@ -70,9 +70,10 @@ git push
 3. **Trunk Check** (inline annotations on PR)
 4. **Setup Go** (1.22.x)
 5. **Build Binary**
-6. **Run All Tests** (unit + E2E)
-7. **Run Hotspots**
-8. **Upload SARIF** (to Code Scanning)
+6. **Runner Preflight** (`scripts/prep-runner.sh` hydrates Trunk caches, runs `tool-health`, records warnings without failing the job)
+7. **Run All Tests** (unit + E2E)
+8. **Run Hotspots**
+9. **Upload SARIF** (to Code Scanning)
 
 ### Quality Gates (Must Pass)
 

@@ -30,12 +30,34 @@ jobs:
       # Install Go and build the CLI
       - uses: actions/setup-go@v6
         with:
-          go-version: "1.25.x"
+          go-version: 1.25.x
 
       - name: Build PunchTrunk CLI
         run: |
           mkdir -p bin
           go build -o bin/punchtrunk ./cmd/punchtrunk
+
+      - name: Runner preflight (hydrate + tool-health)
+        run: |
+          bash scripts/prep-runner.sh \
+            --config-dir=.trunk \
+            --cache-dir="$HOME/.cache/trunk" \
+            --punchtrunk=./bin/punchtrunk \
+            --json-output=reports/preflight.json
+        continue-on-error: true
+        id: prep_runner
+
+      - name: Upload preflight report
+        if: always()
+        uses: actions/upload-artifact@v5
+        with:
+          name: punchtrunk-preflight
+          path: |
+            reports/preflight.json
+            reports/tool-health-preflight.json
+            reports/tool-health-preflight.log
+          if-no-files-found: ignore
+          retention-days: 7
 
       # Run tests
       - name: Run tests
