@@ -88,6 +88,7 @@ sudo mv bin/punchtrunk /usr/local/bin/
 
 5. **CI Integration**:
    - See [Integration Guide](docs/INTEGRATION_GUIDE.md) for GitHub Actions, GitLab CI, CircleCI, and more
+   - See [Agent Provisioning Guide](docs/AGENT_PROVISIONING.md) for ensuring ephemeral runners have all required tools
    - Check [example workflows](.github/workflows/)
 
 ---
@@ -358,6 +359,30 @@ See [Deployment Pipeline](docs/internal/delivery/DEPLOYMENT_PIPELINE.md) and [E2
 
 ---
 
+## Agent & Automation Quick Reference
+
+For GitHub Copilot agents and CI automation:
+
+```bash
+# Verify environment is ready
+punchtrunk --mode diagnose-airgap
+
+# Check tool versions and cache health
+punchtrunk --mode tool-health --tool-health-format summary
+
+# Run full quality suite
+bash scripts/run-quality-suite.sh --base-branch origin/main --punchtrunk ./bin/punchtrunk
+
+# Individual operations
+punchtrunk --mode fmt              # Format only
+punchtrunk --mode lint             # Lint only  
+punchtrunk --mode hotspots         # Hotspots only
+```
+
+See the [Agent Provisioning Guide](docs/AGENT_PROVISIONING.md) for comprehensive setup instructions.
+
+---
+
 ## Troubleshooting
 
 - **No issues appearing?** Trunk uses hold-the-line; run `trunk check --all` locally or push a change.
@@ -366,6 +391,8 @@ See [Deployment Pipeline](docs/internal/delivery/DEPLOYMENT_PIPELINE.md) and [E2
 - **Tests failing?** Run `go test -v ./...` locally to diagnose. Check git is configured properly for E2E tests.
 - **SARIF validation errors?** Validate with `jq empty reports/hotspots.sarif` to ensure valid JSON.
 - **Workspace read-only?** PunchTrunk will redirect hotspot output to `/tmp/punchtrunk/reports` automatically; check the log entry for the new path if uploads cannot find the file.
+- **"trunk executable not found"?** See the [Agent Provisioning Guide](docs/AGENT_PROVISIONING.md) for installation options. PunchTrunk can auto-install trunk or you can install it manually.
+- **Missing tools on ephemeral runners?** Use `scripts/prep-runner.sh` to hydrate caches and validate tool availability before running PunchTrunk.
 
 ---
 
