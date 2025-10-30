@@ -152,6 +152,40 @@ jobs:
         run: punchtrunk --mode hotspots --base-branch=origin/main
 ```
 
+### Security scanning with Semgrep
+
+PunchTrunk includes an offline Semgrep configuration for security scanning. To integrate it into your GitHub Actions workflow:
+
+```yaml
+jobs:
+  security:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.x'
+
+      - name: Install Semgrep
+        run: pip install semgrep
+
+      - name: Run security scan
+        run: make security
+
+      # Or run semgrep directly
+      - name: Run Semgrep (alternative)
+        run: semgrep --config=semgrep/offline-ci.yml --metrics=off .
+```
+
+The offline configuration (`semgrep/offline-ci.yml`) includes rules for:
+- Python debug statements
+- Shell command injection risks (Go)
+- Unsafe curl-to-shell patterns
+
+You can integrate this as a separate job or as an additional step in your existing quality checks job.
+
 ## GitLab CI
 
 ### Complete pipeline (offline bundle)

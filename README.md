@@ -286,7 +286,33 @@ go test -v ./cmd/punchtrunk -run "TestE2EKitchenSink"
 
 # Provisioning scripts
 bats scripts/tests
+
+# Security scan (requires semgrep)
+make security
 ```
+
+### Security Scanning
+
+PunchTrunk includes a Semgrep configuration for offline security scanning. The configuration is located at `semgrep/offline-ci.yml` and includes rules for:
+
+- Python debug print statements
+- Shell command injection risks (Go)
+- Unsafe curl-to-shell patterns
+
+To run the security scan locally:
+
+```bash
+# Install semgrep if not already available
+pip install semgrep
+
+# Run security scan
+make security
+
+# Or run semgrep directly
+semgrep --config=semgrep/offline-ci.yml --metrics=off .
+```
+
+The security scan is automatically run in CI as part of the quality gates.
 
 See [Testing Strategy](docs/testing-strategy.md) for details.
 

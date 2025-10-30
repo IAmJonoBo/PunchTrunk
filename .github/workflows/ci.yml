@@ -65,6 +65,13 @@ jobs:
         run: |
           go test -v -timeout=5m ./...
 
+      # Semgrep security scan
+      - name: Semgrep security scan
+        run: |
+          pip install semgrep
+          semgrep --config=semgrep/offline-ci.yml --metrics=off .
+        continue-on-error: false
+
       - name: Run PunchTrunk hotspots
         run: |
           ./bin/punchtrunk --mode hotspots --base-branch=origin/${{ github.event_name == 'pull_request' && github.event.pull_request.base.ref || 'main' }}

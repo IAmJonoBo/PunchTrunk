@@ -3,7 +3,7 @@ BIN := bin/punchtrunk
 VERSION ?= dev
 LDFLAGS := -s -w -X main.Version=$(VERSION)
 
-.PHONY: build run fmt lint hotspots test offline-bundle eval-hotspots
+.PHONY: build run fmt lint hotspots test offline-bundle eval-hotspots security
 
 build:
 	mkdir -p bin
@@ -34,4 +34,12 @@ eval-hotspots: build
 
 offline-bundle: build
 	./scripts/build-offline-bundle.sh --output-dir dist
+
+security:
+	@if command -v semgrep >/dev/null 2>&1; then \
+		semgrep --config=semgrep/offline-ci.yml --metrics=off .; \
+	else \
+		echo "semgrep not found; install via 'pip install semgrep' or skip security scan" >&2; \
+		exit 1; \
+	fi
 
