@@ -151,30 +151,32 @@ func (l *eventLogger) Event(level, event string, fields LogFields) {
 var defaultLogger = newEventLogger(os.Stderr, false)
 
 type Config struct {
-	Modes          []string
-	Autofix        string
-	BaseBranch     string
-	MaxProcs       int
-	Timeout        time.Duration
-	SarifOut       string
-	Verbose        bool
-	JSONLogs       bool
-	DryRun         bool
-	TmpDir         string
-	ShowVersion    bool
-	TrunkPath      string
-	TrunkConfigDir string
-	TrunkArgs      []string
-	TrunkBinary    string
-	TrunkVersion   string
-	TrunkCacheDir  string
-	TrunkManifest  *bundleManifest
-	TrunkConfig    *trunkYAML
-	ManifestPath   string
-	logger         *eventLogger
-	tmpDirResolved string
-	tmpDirErr      error
-	tmpDirOnce     sync.Once
+	Modes              []string
+	Autofix            string
+	BaseBranch         string
+	MaxProcs           int
+	Timeout            time.Duration
+	SarifOut           string
+	Verbose            bool
+	JSONLogs           bool
+	DryRun             bool
+	TmpDir             string
+	ShowVersion        bool
+	TrunkPath          string
+	TrunkConfigDir     string
+	TrunkArgs          []string
+	TrunkBinary        string
+	TrunkVersion       string
+	TrunkCacheDir      string
+	TrunkManifest      *bundleManifest
+	TrunkConfig        *trunkYAML
+	ManifestPath       string
+	ToolHealthFormat   string
+	ToolHealthJSONPath string
+	logger             *eventLogger
+	tmpDirResolved     string
+	tmpDirErr          error
+	tmpDirOnce         sync.Once
 }
 
 type trunkYAML struct {
@@ -441,6 +443,8 @@ func parseFlags() *Config {
 	var trunkConfigDir string
 	var trunkBinary string
 	var trunkArgs multiFlag
+	var toolHealthFormat string
+	var toolHealthJSON string
 	flag.StringVar(&modes, "mode", "fmt,lint,hotspots", "Comma-separated phases: fmt,lint,hotspots")
 	flag.StringVar(&autofix, "autofix", "fmt", "Autofix scope: none|fmt|lint|all")
 	flag.StringVar(&base, "base-branch", "origin/main", "Base branch for change detection")
@@ -455,6 +459,8 @@ func parseFlags() *Config {
 	flag.StringVar(&trunkConfigDir, "trunk-config-dir", "", "Override Trunk config directory (defaults to repo autodetect)")
 	flag.StringVar(&trunkBinary, "trunk-binary", "", "Explicit path to trunk executable (for airgapped runners)")
 	flag.Var(&trunkArgs, "trunk-arg", "Additional argument to pass to trunk CLI (repeatable)")
+	flag.StringVar(&toolHealthFormat, "tool-health-format", "json", "Output format for tool-health: json|summary")
+	flag.StringVar(&toolHealthJSON, "tool-health-json", "", "Optional file path to write tool-health JSON report")
 	flag.Parse()
 
 	envTrunkBinary := os.Getenv("PUNCHTRUNK_TRUNK_BINARY")
@@ -487,20 +493,22 @@ func parseFlags() *Config {
 	}
 
 	return &Config{
-		Modes:          modeList,
-		Autofix:        strings.ToLower(strings.TrimSpace(autofix)),
-		BaseBranch:     base,
-		MaxProcs:       maxProcs,
-		Timeout:        timeout,
-		SarifOut:       filepath.Clean(sarifOut),
-		Verbose:        verbose,
-		JSONLogs:       jsonLogs,
-		DryRun:         dryRun,
-		TmpDir:         strings.TrimSpace(tmpDir),
-		ShowVersion:    version,
-		TrunkConfigDir: trunkConfigDir,
-		TrunkArgs:      trunkArgs,
-		TrunkBinary:    trunkBinary,
+		Modes:              modeList,
+		Autofix:            strings.ToLower(strings.TrimSpace(autofix)),
+		BaseBranch:         base,
+		MaxProcs:           maxProcs,
+		Timeout:            timeout,
+		SarifOut:           filepath.Clean(sarifOut),
+		Verbose:            verbose,
+		JSONLogs:           jsonLogs,
+		DryRun:             dryRun,
+		TmpDir:             strings.TrimSpace(tmpDir),
+		ShowVersion:        version,
+		TrunkConfigDir:     trunkConfigDir,
+		TrunkArgs:          trunkArgs,
+		TrunkBinary:        trunkBinary,
+		ToolHealthFormat:   strings.TrimSpace(toolHealthFormat),
+		ToolHealthJSONPath: strings.TrimSpace(toolHealthJSON),
 	}
 }
 
@@ -1540,7 +1548,28 @@ func runToolHealth(ctx context.Context, cfg *Config) error {
 	if err != nil {
 		return fmt.Errorf("marshal tool health: %w", err)
 	}
-	fmt.Println(string(data))
+	jsonText := string(data)
+	jsonPath := strings.TrimSpace(cfg.ToolHealthJSONPath)
+	if jsonPath != "" {
+		if err := os.MkdirAll(filepath.Dir(jsonPath), 0o755); err != nil {
+			return fmt.Errorf("ensure tool-health json directory: %w", err)
+		}
+		if err := os.WriteFile(jsonPath, []byte(jsonText), 0o644); err != nil {
+			return fmt.Errorf("write tool-health json: %w", err)
+		}
+	}
+	format := strings.TrimSpace(strings.ToLower(cfg.ToolHealthFormat))
+	if format == "" {
+		format = "json"
+	}
+	switch format {
+	case "json":
+		fmt.Println(jsonText)
+	case "summary", "table":
+		fmt.Println(renderToolHealthSummary(report))
+	default:
+		return fmt.Errorf("unsupported tool-health format %q", cfg.ToolHealthFormat)
+	}
 	if report.Trunk.Status == "mismatch" {
 		issues = true
 	}
@@ -1551,6 +1580,57 @@ func runToolHealth(ctx context.Context, cfg *Config) error {
 		return fmt.Errorf("tool-health detected issues; see report warnings for details")
 	}
 	return nil
+}
+
+func renderToolHealthSummary(report toolHealthReport) string {
+	var b strings.Builder
+	fmt.Fprintf(&b, "Tool Health Summary (%s)\n", report.Timestamp)
+	if report.Trunk.Expected != "" {
+		fmt.Fprintf(&b, "Trunk CLI: %s (expected %s, detected %s)", report.Trunk.Status, report.Trunk.Expected, report.Trunk.Detected)
+	} else {
+		fmt.Fprintf(&b, "Trunk CLI: %s", report.Trunk.Status)
+		if report.Trunk.Detected != "" {
+			fmt.Fprintf(&b, " (detected %s)", report.Trunk.Detected)
+		}
+	}
+	if report.Trunk.Message != "" {
+		fmt.Fprintf(&b, " - %s", report.Trunk.Message)
+	}
+	fmt.Fprintln(&b)
+	if report.CacheDir != "" {
+		fmt.Fprintf(&b, "Cache dir: %s\n", report.CacheDir)
+	} else {
+		fmt.Fprintln(&b, "Cache dir: (not resolved)")
+	}
+	appendItems := func(title string, items []toolHealthItem) {
+		if len(items) == 0 {
+			fmt.Fprintf(&b, "%s: none\n", title)
+			return
+		}
+		fmt.Fprintf(&b, "%s:\n", title)
+		for _, item := range items {
+			fmt.Fprintf(&b, "  - %s: %s", item.Name, item.Status)
+			if item.Message != "" {
+				fmt.Fprintf(&b, " (%s)", item.Message)
+			}
+			if item.CachePath != "" {
+				fmt.Fprintf(&b, " [%s]", item.CachePath)
+			}
+			fmt.Fprintln(&b)
+		}
+	}
+	appendItems("Plugin sources", report.PluginSources)
+	appendItems("Runtimes", report.Runtimes)
+	appendItems("Linters", report.Linters)
+	if len(report.Warnings) > 0 {
+		fmt.Fprintln(&b, "Warnings:")
+		for _, warning := range report.Warnings {
+			fmt.Fprintf(&b, "  - %s\n", warning)
+		}
+	} else {
+		fmt.Fprintln(&b, "Warnings: none")
+	}
+	return strings.TrimRight(b.String(), "\n")
 }
 
 func diagnoseAirgap(cfg *Config) DiagnoseReport {

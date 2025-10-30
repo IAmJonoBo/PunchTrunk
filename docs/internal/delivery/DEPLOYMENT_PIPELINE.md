@@ -4,7 +4,7 @@ _This document describes the complete deployment pipeline for PunchTrunk from de
 
 ## Pipeline Overview
 
-```
+```text
 ┌─────────────┐     ┌─────────────┐     ┌─────────────┐     ┌─────────────┐
 │   Local     │────▶│   PR CI     │────▶│   Main CI   │────▶│   Release   │
 │   Dev       │     │   (E2E)     │     │   (Full)    │     │   Deploy    │
@@ -70,7 +70,7 @@ git push
 3. **Trunk Check** (inline annotations on PR)
 4. **Setup Go** (1.22.x)
 5. **Build Binary**
-6. **Runner Preflight** (`scripts/prep-runner.sh` hydrates Trunk caches, runs `tool-health`, records warnings without failing the job)
+6. **Runner Preflight** (`scripts/prep-runner.sh` hydrates Trunk caches, runs `tool-health`, and publishes Markdown/JSON reports while recording warnings without failing the job)
 7. **Run All Tests** (unit + E2E)
 8. **Run Hotspots**
 9. **Upload SARIF** (to Code Scanning)
@@ -90,7 +90,7 @@ git push
 #### Jobs
 
 1. **E2E Tests** (all E2E scenarios)
-2. **Integration with Trunk** (real CLI integration)
+2. **Integration with Trunk** (real CLI integration via `scripts/run-quality-suite.sh`, which first runs `prep-runner.sh` and publishes the same preflight/tool-health artifacts we rely on in CI)
 3. **Performance Check** (< 2 min for hotspots)
 4. **Quality Gate Summary** (all gates passed)
 

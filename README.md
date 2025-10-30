@@ -175,6 +175,7 @@ PUNCHTRUNK_AIRGAPPED=1 ./bin/punchtrunk --mode lint --trunk-binary=/opt/trunk/bi
 - Use `scripts/setup-airgap.sh` (Linux/macOS) or `scripts/setup-airgap.ps1` (Windows) to unpack the bundle, create stable symlinks/wrappers, wire caches, and emit an env file you can source in provisioning jobs.
 - `scripts/build-offline-bundle.sh` accepts `--target-os` and `--target-arch` so you can build archives for any supported platform from a single host, auto-downloading the matching Trunk CLI when not provided.
 - Bundle installs persist under the directory you pass to `setup-airgap.*`; add `$(install-dir)/bin` to `PATH` or source the generated env helper so callers resolve the embedded PunchTrunk and Trunk binaries without extra exports.
+- `scripts/run-quality-suite.sh` executes the full preflight (`prep-runner.sh`) and then runs `punchtrunk --mode fmt,lint,hotspots` against your chosen base branch, emitting Markdown + JSON reports that agents can ingest even when the network is sealed.
 - See `docs/INTEGRATION_GUIDE.md` for a step-by-step walkthrough on verifying the bundle, running the setup scripts, and wiring environment variables before running PunchTrunk in sealed networks.
 
 ### Diagnose offline readiness
@@ -191,10 +192,10 @@ punchtrunk --mode diagnose-airgap --sarif-out=/workspace/reports/hotspots.sarif
 
 ### Inspect toolchain health
 
-`tool-health` inspects the resolved Trunk CLI, parses `.trunk/trunk.yaml`, and verifies that a usable cache exists for each pinned plugin, runtime, and linter:
+`tool-health` inspects the resolved Trunk CLI, parses `.trunk/trunk.yaml`, and verifies that a usable cache exists for each pinned plugin, runtime, and linter. Use `--tool-health-format summary` when you want human-friendly tables and `--tool-health-json <path>` to capture machine-readable output:
 
 ```bash
-punchtrunk --mode tool-health
+punchtrunk --mode tool-health --tool-health-format summary --tool-health-json reports/tool-health.json
 ```
 
 - Emits a JSON report (version alignment, cache directory, manifest metadata)
@@ -207,6 +208,7 @@ punchtrunk --mode tool-health
 
 - Inline annotations via **trunk-io/trunk-action**.
 - `scripts/prep-runner.sh` hydrates Trunk caches, runs `tool-health`, and emits a summary artifact so sealed runners retain context even when fetches fail.
+- `scripts/run-quality-suite.sh` wraps the preflight plus a full PunchTrunk run; the integration leg of `e2e.yml` now calls it directly so local agents and CI ingest the same summaries and JSON artifacts.
 - Optional **SARIF upload** for hotspots (`reports/hotspots.sarif`).
 - Ephemeral-friendly caches: Trunk tool cache + Go build cache.
 

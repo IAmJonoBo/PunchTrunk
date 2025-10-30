@@ -71,6 +71,8 @@ TOOL_HEALTH_STATUS="skipped"
 TOOL_HEALTH_MESSAGE="punchtrunk binary not found"
 WARNINGS=()
 TOOL_HEALTH_OUTPUT=""
+TOOL_HEALTH_SUMMARY=""
+TOOL_HEALTH_LOG=""
 
 append_warning() {
 	WARNINGS+=("$1")
@@ -224,14 +226,16 @@ if [[ -x $PUNCH_BINARY ]]; then
 	TOOL_HEALTH_MESSAGE="Running punchtrunk tool-health"
 	mkdir -p reports
 	TOOL_HEALTH_OUTPUT="reports/tool-health-preflight.json"
-	if ! "$PUNCH_BINARY" --mode tool-health --trunk-config-dir "$CONFIG_DIR" --trunk-binary "$TRUNK_BINARY" >"$TOOL_HEALTH_OUTPUT" 2>reports/tool-health-preflight.log; then
+	TOOL_HEALTH_SUMMARY="reports/tool-health-preflight.md"
+	TOOL_HEALTH_LOG="reports/tool-health-preflight.log"
+	if ! "$PUNCH_BINARY" --mode tool-health --trunk-config-dir "$CONFIG_DIR" --trunk-binary "$TRUNK_BINARY" --tool-health-format summary --tool-health-json "${TOOL_HEALTH_OUTPUT}" >"$TOOL_HEALTH_SUMMARY" 2>"${TOOL_HEALTH_LOG}"; then
 		TOOL_HEALTH_STATUS="failed"
 		TOOL_HEALTH_MESSAGE="punchtrunk tool-health returned non-zero"
 		append_warning "punchtrunk tool-health reported issues"
 	else
 		TOOL_HEALTH_STATUS="success"
 		if [[ $VERBOSE -eq 1 ]]; then
-			log_info "punchtrunk tool-health output saved to $TOOL_HEALTH_OUTPUT"
+			log_info "tool-health summary saved to $TOOL_HEALTH_SUMMARY"
 		fi
 	fi
 else
@@ -257,22 +261,32 @@ if [[ ${#WARNINGS[@]} -gt 0 ]]; then
 	warnings_json="[${warning_entries}]"
 fi
 
+network_message_esc=$(json_escape "${NETWORK_MESSAGE}")
+trunk_message_esc=$(json_escape "${TRUNK_MESSAGE}")
+cache_dir_esc=$(json_escape "${TRUNK_CACHE_DIR-}")
+tool_health_message_esc=$(json_escape "${TOOL_HEALTH_MESSAGE}")
+tool_health_output_esc=$(json_escape "${TOOL_HEALTH_OUTPUT}")
+tool_health_summary_esc=$(json_escape "${TOOL_HEALTH_SUMMARY}")
+tool_health_log_esc=$(json_escape "${TOOL_HEALTH_LOG}")
+
 cat >"$JSON_OUTPUT" <<EOF
 {
   "timestamp": "${timestamp}",
   "network": {
     "status": "${NETWORK_STATUS}",
-    "message": "$(json_escape "$NETWORK_MESSAGE")"
+		"message": "${network_message_esc}"
   },
   "trunk_fetch": {
     "status": "${TRUNK_STATUS}",
-    "message": "$(json_escape "$TRUNK_MESSAGE")",
-    "cache_dir": "$(json_escape "${TRUNK_CACHE_DIR-}")"
+		"message": "${trunk_message_esc}",
+		"cache_dir": "${cache_dir_esc}"
   },
   "tool_health": {
     "status": "${TOOL_HEALTH_STATUS}",
-    "message": "$(json_escape "$TOOL_HEALTH_MESSAGE")",
-    "output": "$(json_escape "$TOOL_HEALTH_OUTPUT")"
+		"message": "${tool_health_message_esc}",
+		"output": "${tool_health_output_esc}",
+		"summary": "${tool_health_summary_esc}",
+		"log": "${tool_health_log_esc}"
   },
   "warnings": ${warnings_json}
 }
@@ -286,6 +300,9 @@ append_summary "### PunchTrunk runner prep"
 append_summary "- Network: ${NETWORK_STATUS} (${NETWORK_MESSAGE})"
 append_summary "- Trunk: ${TRUNK_STATUS}"
 append_summary "- Tool health: ${TOOL_HEALTH_STATUS}"
+if [[ -n ${TOOL_HEALTH_SUMMARY} ]]; then
+	append_summary "- Tool health summary: ${TOOL_HEALTH_SUMMARY}"
+fi
 
 if [[ ${#WARNINGS[@]} -gt 0 ]]; then
 	append_summary "- Warnings:"

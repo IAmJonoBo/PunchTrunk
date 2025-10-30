@@ -21,7 +21,7 @@ Keep these consistent with project tooling. If you add a runtime, document the c
 - `checkov@3.2.488`
 - `git-diff-check`
 - `gofmt@1.22.3`
-- `golangci-lint2@2.5.0`
+- `golangci-lint2@2.6.0`
 - `hadolint@2.14.0`
 - `markdownlint@0.45.0`
 - `osv-scanner@2.2.4`
@@ -37,6 +37,7 @@ Use `trunk check --all` when verifying new linter additions.
 
 - `.trunk/configs/.markdownlint.yaml`: aligns markdownlint with Prettier formatting.
 - `.trunk/configs/.shellcheckrc`: enables all checks but disables `SC2154` to tolerate Trunk env vars.
+- `.golangci.yml`: uses config schema `version: "2"` and disables test runs so golangci-lint stays aligned with the newer `golangci-lint2` binary shipped by Trunk.
 - `.trunk/configs/.yamllint.yaml`: tightens YAML quoting and duplicate-key rules.
 - `.trunk/configs/.hadolint.yaml`: suppresses shell sourcing warnings (`SC1090`, `SC1091`).
 

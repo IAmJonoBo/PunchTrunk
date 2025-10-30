@@ -103,10 +103,29 @@ jobs:
       - name: Build PunchTrunk
         run: make build
 
-      - name: Run PunchTrunk with all modes
+      - name: Run quality suite (prep + PunchTrunk)
         run: |
-          ./bin/punchtrunk --mode fmt,lint,hotspots --base-branch=HEAD --verbose
+          bash scripts/run-quality-suite.sh \
+            --base-branch HEAD \
+            --modes fmt,lint,hotspots \
+            --punchtrunk ./bin/punchtrunk \
+            --config-dir .trunk \
+            --cache-dir "$HOME/.cache/trunk" \
+            -- --verbose
         continue-on-error: true # Lint failures shouldn't fail the test
+
+      - name: Upload quality suite artifacts
+        if: always()
+        uses: actions/upload-artifact@v5
+        with:
+          name: punchtrunk-quality-suite
+          path: |
+            reports/preflight.json
+            reports/tool-health-preflight.json
+            reports/tool-health-preflight.md
+            reports/tool-health-preflight.log
+          if-no-files-found: ignore
+          retention-days: 7
 
       - name: Verify SARIF output
         run: |

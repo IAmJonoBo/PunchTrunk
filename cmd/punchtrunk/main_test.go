@@ -1219,6 +1219,35 @@ func executeToolHealth(t *testing.T, cfg *Config) (toolHealthReport, error) {
 	return report, execErr
 }
 
+func captureToolHealthOutput(t *testing.T, cfg *Config) (string, error) {
+	t.Helper()
+	if cfg == nil {
+		cfg = &Config{}
+	}
+	cfg.logger = newEventLogger(io.Discard, false)
+
+	r, w, err := os.Pipe()
+	if err != nil {
+		t.Fatalf("pipe: %v", err)
+	}
+	original := os.Stdout
+	os.Stdout = w
+	done := make(chan struct{})
+	var buf bytes.Buffer
+	go func() {
+		_, _ = io.Copy(&buf, r)
+		close(done)
+	}()
+
+	execErr := runToolHealth(context.Background(), cfg)
+	w.Close()
+	os.Stdout = original
+	<-done
+	_ = r.Close()
+
+	return buf.String(), execErr
+}
+
 func TestRunToolHealthReportsIssues(t *testing.T) {
 	cacheDir := t.TempDir()
 	cfg := &Config{
@@ -1287,6 +1316,55 @@ func TestRunToolHealthSuccess(t *testing.T) {
 	}
 	if len(report.Warnings) != 0 {
 		t.Fatalf("expected no warnings, got %+v", report.Warnings)
+	}
+}
+
+func TestRunToolHealthSummaryFormat(t *testing.T) {
+	cacheDir := t.TempDir()
+	pluginPath := filepath.Join(cacheDir, "plugins", "plugin-a", "main")
+	runtimePath := filepath.Join(cacheDir, "runtimes", "node", "18.17.0")
+	toolPath := filepath.Join(cacheDir, "tools", "eslint", "8.50.0")
+	for _, path := range []string{pluginPath, runtimePath, toolPath} {
+		if err := os.MkdirAll(path, 0o755); err != nil {
+			t.Fatalf("mkdir %s: %v", path, err)
+		}
+	}
+
+	jsonDir := t.TempDir()
+	jsonPath := filepath.Join(jsonDir, "tool-health.json")
+
+	cfg := &Config{
+		TrunkVersion:       "trunk version 1.2.3",
+		TrunkCacheDir:      cacheDir,
+		ToolHealthFormat:   "summary",
+		ToolHealthJSONPath: jsonPath,
+	}
+	cfg.TrunkConfig = &trunkYAML{}
+	cfg.TrunkConfig.CLI.Version = "1.2.3"
+	cfg.TrunkConfig.Plugins.Sources = []trunkPluginSource{{ID: "plugin-a", Ref: "main"}}
+	cfg.TrunkConfig.Runtimes.Enabled = []string{"node@18.17.0"}
+	cfg.TrunkConfig.Lint.Enabled = []string{"eslint@8.50.0"}
+
+	output, err := captureToolHealthOutput(t, cfg)
+	if err != nil {
+		t.Fatalf("runToolHealth summary: %v", err)
+	}
+	if !strings.Contains(output, "Tool Health Summary") {
+		t.Fatalf("expected summary header, got %q", output)
+	}
+	if !strings.Contains(output, "Linters:") {
+		t.Fatalf("expected linter section, got %q", output)
+	}
+	data, readErr := os.ReadFile(jsonPath)
+	if readErr != nil {
+		t.Fatalf("read json output: %v", readErr)
+	}
+	var report toolHealthReport
+	if err := json.Unmarshal(data, &report); err != nil {
+		t.Fatalf("unmarshal json output: %v", err)
+	}
+	if len(report.Linters) == 0 {
+		t.Fatalf("expected linters in json output")
 	}
 }
 

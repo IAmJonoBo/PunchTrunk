@@ -55,6 +55,7 @@ jobs:
           path: |
             reports/preflight.json
             reports/tool-health-preflight.json
+            reports/tool-health-preflight.md
             reports/tool-health-preflight.log
           if-no-files-found: ignore
           retention-days: 7
