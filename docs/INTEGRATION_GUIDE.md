@@ -4,6 +4,8 @@
 
 This guide covers integrating PunchTrunk into CI/CD pipelines, ephemeral runners, and automated workflows. PunchTrunk is designed to be ephemeral-friendly with minimal dependencies and fast cold starts.
 
+> **📖 For comprehensive provisioning strategies, see the [Agent Provisioning Guide](AGENT_PROVISIONING.md)** which covers tool installation, validation, and troubleshooting in detail.
+
 ## Table of Contents
 
 - [Quick Start](#quick-start)
@@ -61,7 +63,111 @@ punchtrunk --mode hotspots --base-branch=origin/main
 
 ## GitHub Actions
 
-### Complete integration (offline bundle)
+### Recommended: Explicit Tool Provisioning (2025)
+
+This approach explicitly installs and validates all required tools, ensuring ephemeral runners are fully provisioned. This is the strategy used in PunchTrunk's own CI.
+
+```yaml
+name: Quality Checks
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+jobs:
+  punchtrunk:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    permissions:
+      contents: read
+      security-events: write # Required for SARIF uploads
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v5
+        with:
+          fetch-depth: 0 # Required for hotspot analysis
+
+      # Step 1: Cache Trunk tools
+      - name: Cache Trunk tools
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/trunk
+          key: trunk-${{ runner.os }}-${{ hashFiles('.trunk/trunk.yaml') }}
+          restore-keys: |
+            trunk-${{ runner.os }}-
+
+      # Step 2: Explicitly install Trunk CLI
+      - name: Install Trunk CLI
+        run: |
+          curl https://get.trunk.io -fsSL | bash -s -- -y
+          echo "${HOME}/.trunk/bin" >> $GITHUB_PATH
+        env:
+          TRUNK_INIT_NO_ANALYTICS: "1"
+          TRUNK_TELEMETRY_OPTOUT: "1"
+
+      # Step 3: Verify installation
+      - name: Verify Trunk CLI
+        run: |
+          trunk --version
+          echo "✓ Trunk CLI is available"
+
+      # Step 4: Setup Go
+      - name: Setup Go
+        uses: actions/setup-go@v6
+        with:
+          go-version: 1.25.x
+
+      # Step 5: Build PunchTrunk
+      - name: Build PunchTrunk
+        run: make build
+
+      # Step 6: Validate tool provisioning
+      - name: Validate tool provisioning
+        run: |
+          echo "=== Validating Tool Provisioning ==="
+          git --version
+          trunk --version
+          go version
+          ./bin/punchtrunk --version
+          echo "✅ All required tools are provisioned"
+
+      # Step 7: Hydrate caches
+      - name: Prepare runner environment
+        run: make prep-runner
+        continue-on-error: true
+
+      # Step 8: Run PunchTrunk
+      - name: Run PunchTrunk
+        run: |
+          ./bin/punchtrunk --mode fmt,lint,hotspots \
+            --base-branch=origin/${{ github.event_name == 'pull_request' && github.event.pull_request.base.ref || 'main' }}
+
+      # Step 9: Upload SARIF
+      - name: Upload SARIF
+        uses: github/codeql-action/upload-sarif@v4
+        with:
+          sarif_file: reports/hotspots.sarif
+
+      # Step 10: Upload reports (optional)
+      - name: Upload reports
+        if: always()
+        uses: actions/upload-artifact@v5
+        with:
+          name: punchtrunk-reports
+          path: reports/
+          retention-days: 7
+```
+
+**Key benefits:**
+- ✅ Explicit tool installation ensures no missing dependencies
+- ✅ Validation step catches provisioning issues early
+- ✅ Trunk CLI cached across runs for speed
+- ✅ Works reliably on ephemeral runners
+- ✅ Easy to debug and understand
+
+### Alternative: Complete integration (offline bundle)
 
 ```yaml
 name: Quality Checks
