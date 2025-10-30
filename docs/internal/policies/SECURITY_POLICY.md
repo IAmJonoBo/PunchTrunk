@@ -12,7 +12,7 @@
 
 ## Threat Model
 
-- Maintained in `docs/policies/THREAT_MODEL.md`. Review every release cycle or after major dependency changes.
+- Maintained in `docs/internal/policies/THREAT_MODEL.md`. Review every release cycle or after major dependency changes.
 
 ## Secure Development Lifecycle
 
@@ -22,7 +22,7 @@
 
 ## Reporting & Response
 
-- Report suspected vulnerabilities to `security@n00tropic.example`. Maintainers acknowledge within 24 hours and coordinate fixes following incident response playbook (`docs/ops/INCIDENT_RESPONSE.md`).
+- Report suspected vulnerabilities to `security@n00tropic.example`. Maintainers acknowledge within 24 hours and coordinate fixes following incident response playbook (`docs/internal/ops/INCIDENT_RESPONSE.md`).
 - Do not disclose publicly until a fix is available and users are notified via release notes.
 
 ## Hard Rules

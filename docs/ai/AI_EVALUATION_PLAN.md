@@ -5,9 +5,9 @@ This plan ties together evaluation requirements from the quality and testing doc
 ## Canonical References
 
 - `docs/testing-strategy.md`: Test pyramid, coverage goals, execution commands.
-- `docs/quality/QUALITY_GATES.md`: Merge/release gates, including evaluation suite.
-- `docs/quality/QA_CHECKLIST.md`: Pre-release verification steps.
-- `docs/operations/ci.md`: CI workflow expectations and maintenance.
+- `docs/internal/quality/QUALITY_GATES.md`: Merge/release gates, including evaluation suite.
+- `docs/internal/quality/QA_CHECKLIST.md`: Pre-release verification steps.
+- `docs/internal/operations/ci.md`: CI workflow expectations and maintenance.
 - `docs/releasing.md` & `docs/RELEASE_PREP_SUMMARY.md`: Release hand-off requirements.
 - `docs/CONVENTIONS.md` & `docs/security-supply-chain.md`: Coding, security, and supply chain guardrails.
 
@@ -68,12 +68,12 @@ This plan ties together evaluation requirements from the quality and testing doc
 
 ## Incident Response
 
-- If evaluation gates fail (baseline diff, schema invalid, runtime regression), pause release, open an incident per `docs/policies/SECURITY_POLICY.md`, and document mitigation.
+- If evaluation gates fail (baseline diff, schema invalid, runtime regression), pause release, open an incident per `docs/internal/policies/SECURITY_POLICY.md`, and document mitigation.
 - For hotfixes, capture bypass rationale and schedule follow-up to restore full evaluation coverage within 24 hours (per QUALITY_GATES).
 
 ## Future Enhancements
 
 - Expand evaluation fixtures to include additional languages and large-repo churn patterns.
 - Automate Spearman correlation reporting inside `scripts/eval-hotspots.sh`.
-- Add dashboards tracking evaluation metrics over time (tie into `docs/ops/OBSERVABILITY_SPEC.md`).
+- Add dashboards tracking evaluation metrics over time (tie into `docs/internal/ops/OBSERVABILITY_SPEC.md`).
 - Integrate container and dependency scans into nightly evaluation workflows.

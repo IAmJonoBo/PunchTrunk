@@ -23,10 +23,10 @@
 - **Prompt hygiene:** See `docs/ai/COPILOT_USAGE.md` and `.github/copilot-instructions.md`; AI assistance documented in PRs.
 - **Red‑teaming:** Periodic synthetic repos with seeded issues ensure hotspots and lint catch regressions.
 - **Data boundaries:** Source code stays local/CI; SARIF uploaded only to GitHub Code Scanning; no PII allowed. Secrets detection enforced via Trunk.
-- **Escalation:** Security contact in `docs/policies/SECURITY_POLICY.md`; CI failure on SARIF upload triggers maintainer review.
+- **Escalation:** Security contact in `docs/internal/policies/SECURITY_POLICY.md`; CI failure on SARIF upload triggers maintainer review.
 
 ## Evaluation
 
 - **Offline:** Sample repos spanning languages validate formatter coverage and hotspot accuracy.
 - **Online:** CI metrics (success rate, runtime), SARIF ingestion success, count of new lint violations.
-- **Cadence:** Quarterly review; ad-hoc postmortems after incidents documented in `docs/templates/Postmortem.md`.
+- **Cadence:** Quarterly review; ad-hoc postmortems after incidents documented in `docs/internal/templates/Postmortem.md`.

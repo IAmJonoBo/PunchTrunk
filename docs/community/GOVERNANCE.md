@@ -18,7 +18,7 @@
 
 ## Security Contact
 
-- Report vulnerabilities to `security@n00tropic.example`. A maintainer acknowledges within 24 hours and coordinates disclosure following `docs/policies/SECURITY_POLICY.md`.
+- Report vulnerabilities to `security@n00tropic.example`. A maintainer acknowledges within 24 hours and coordinates disclosure following `docs/internal/policies/SECURITY_POLICY.md`.
 
 ## Community Conduct
 

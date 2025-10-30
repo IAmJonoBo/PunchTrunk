@@ -65,12 +65,12 @@ Deliver a reproducible `PunchTrunk` binary and optional Docker image with minima
 
 ## Post-Release Checklist
 
-- Update `docs/ROADMAP.md` with shipped items.
+- Update `docs/internal/ROADMAP.md` with shipped items.
 - Announce changes with automation status and known issues.
 - Monitor GitHub Code Scanning uploads for the new release.
 
 ## Maintainability
 
-- Validate Go and Trunk versions before tagging. If versions change, sync documentation (`docs/trunk-config.md`, `docs/workflows/local-dev.md`, `docs/security-supply-chain.md`) and open ADRs when appropriate.
+- Validate Go and Trunk versions before tagging. If versions change, sync documentation (`docs/trunk-config.md`, `docs/internal/workflows/local-dev.md`, `docs/security-supply-chain.md`) and open ADRs when appropriate.
 - Run container and binary scans (for example, `trivy image punchtrunk:local`) to confirm dependencies are current.
-- Capture notable release learnings in `docs/ROADMAP.md` or follow-up issues to keep the project adaptable.
+- Capture notable release learnings in `docs/internal/ROADMAP.md` or follow-up issues to keep the project adaptable.

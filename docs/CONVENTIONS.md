@@ -28,7 +28,7 @@ _This is a Reference document._
 
 ## Version Tracking
 
-- Document Go or Trunk upgrades in the pull request description and update `docs/trunk-config.md` and `docs/workflows/local-dev.md` accordingly.
+- Document Go or Trunk upgrades in the pull request description and update `docs/trunk-config.md` and `docs/internal/workflows/local-dev.md` accordingly.
 - When Docker base images change, note the new digest in `docs/security-supply-chain.md` and release notes.
 - Keep ADRs synchronized with implementation choices so future contributors understand why versions changed.
 

@@ -6,7 +6,7 @@ Thanks for helping improve PunchTrunk. This guide follows Google developer docum
 
 - Install Go 1.22+ and Trunk CLI.
 - Run `trunk init` once per clone to download the pinned toolchain.
-- Familiarize yourself with `docs/overview.md` and `docs/workflows/local-dev.md`.
+- Familiarize yourself with `docs/overview.md` and `docs/internal/workflows/local-dev.md`.
 
 ## Development Workflow
 

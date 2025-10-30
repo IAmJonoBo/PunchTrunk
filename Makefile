@@ -3,7 +3,7 @@ BIN := bin/punchtrunk
 VERSION ?= dev
 LDFLAGS := -s -w -X main.Version=$(VERSION)
 
-.PHONY: build run fmt lint hotspots docker sign test offline-bundle eval-hotspots
+.PHONY: build run fmt lint hotspots test offline-bundle eval-hotspots
 
 build:
 	mkdir -p bin
@@ -34,11 +34,4 @@ eval-hotspots: build
 
 offline-bundle: build
 	./scripts/build-offline-bundle.sh --output-dir dist
-
-docker:
-	docker build -t punchtrunk:local .
-
-sign:
-	# Example: cosign sign --keyless punchtrunk:local
-	@echo "Use cosign to sign your image (keyless OIDC supported)."
 

@@ -43,4 +43,4 @@ Restore productivity on short-lived CI or cloud workspaces where caches and git 
 
 - Capture logs from `trunk check` and orchestrator output.
 - Attach `reports/hotspots.sarif` (even if empty) to issue templates for faster triage.
-- Update `docs/operations/ci.md` if a systemic CI change is needed.
+- Update `docs/internal/operations/ci.md` if a systemic CI change is needed.

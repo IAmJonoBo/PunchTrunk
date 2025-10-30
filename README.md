@@ -28,30 +28,32 @@ This installs the latest release to `/usr/local/bin/punchtrunk`.
 
 ### Manual Download
 
-Download pre-built binaries from [GitHub Releases](https://github.com/IAmJonoBo/PunchTrunk/releases):
+Download pre-built artifacts from [GitHub Releases](https://github.com/IAmJonoBo/PunchTrunk/releases):
 
-**Linux (AMD64):**
+**Offline Bundles (PunchTrunk + Trunk CLI + config):**
+
+Each release ships cross-platform archives named `punchtrunk-offline-<os>-<arch>.tar.gz`. They include:
+
+- `bin/punchtrunk`
+- `trunk/bin/trunk` (matching the repository's pinned Trunk version)
+- `.trunk/` configuration and optional cached toolchains
+- Manifest and checksum files
+
+Extract on the target host and source the generated env file (see [Offline / air-gapped environments](#offline--air-gapped-environments)).
+
+**Standalone Binaries:**
+
+- Linux (AMD64): `punchtrunk-linux-amd64`
+- macOS (ARM64 - M1/M2): `punchtrunk-darwin-arm64`
+- Windows (AMD64): `punchtrunk-windows-amd64.exe`
 
 ```bash
-curl -L https://github.com/IAmJonoBo/PunchTrunk/releases/latest/download/punchtrunk-linux-amd64 -o punchtrunk
+curl -L https://github.com/IAmJonoBo/PunchTrunk/releases/latest/download/punchtrunk-<os>-<arch> -o punchtrunk
 chmod +x punchtrunk
 sudo mv punchtrunk /usr/local/bin/
 ```
 
-**macOS (ARM64 - M1/M2):**
-
-```bash
-curl -L https://github.com/IAmJonoBo/PunchTrunk/releases/latest/download/punchtrunk-darwin-arm64 -o punchtrunk
-chmod +x punchtrunk
-sudo mv punchtrunk /usr/local/bin/
-```
-
-**Windows (AMD64):**
-
-```powershell
-# Download from: https://github.com/IAmJonoBo/PunchTrunk/releases/latest/download/punchtrunk-windows-amd64.exe
-# Add to PATH
-```
+Windows users can download the `.exe` directly and add it to `PATH`.
 
 ### Container Image
 
@@ -63,6 +65,8 @@ docker run --rm -v $(pwd):/workspace -w /workspace \
   ghcr.io/iamjonobo/punchtrunk:latest \
   --mode fmt,lint,hotspots
 ```
+
+The image now bundles the Trunk CLI at `/app/trunk` and exposes it via `PUNCHTRUNK_TRUNK_BINARY=/app/trunk`, making the container drop-in for air-gapped environments or CI runners without pre-installed tooling.
 
 Container images are signed with [cosign](https://github.com/sigstore/cosign):
 
@@ -88,8 +92,9 @@ sudo mv bin/punchtrunk /usr/local/bin/
 
 1. **Install PunchTrunk** (see [Installation](#installation) above)
 
-2. **Install Trunk CLI** (optional – PunchTrunk auto-installs if missing):
-   - [Installation guide](https://docs.trunk.io/code-quality/setup-and-installation/initialize-trunk)
+2. **Verify Trunk CLI availability**:
+   - The PunchTrunk container and offline bundles already ship with a pinned Trunk binary.
+   - On developer laptops you can rely on PunchTrunk's auto-installer or follow the [Trunk installation guide](https://docs.trunk.io/code-quality/setup-and-installation/initialize-trunk) if you prefer manual control.
 3. **Initialise** Trunk in your repo (first time only):
 
    ```bash
@@ -185,6 +190,8 @@ PUNCHTRUNK_AIRGAPPED=1 ./bin/punchtrunk --mode lint --trunk-binary=/opt/trunk/bi
 - When the workspace is read-only, hotspot SARIF output automatically falls back to `/tmp/punchtrunk/reports/<file>` and a log line explains the redirect.
 - Build an offline bootstrap bundle with `make offline-bundle` (or `./scripts/build-offline-bundle.sh` for custom paths). The archive contains the PunchTrunk binary, a Trunk CLI executable, `.trunk` config, optional cached toolchain artifacts, a manifest, and SHA-256 checksums so air-gapped agents can verify integrity.
 - Use `scripts/setup-airgap.sh` (Linux/macOS) or `scripts/setup-airgap.ps1` (Windows) to unpack the bundle, create stable symlinks/wrappers, wire caches, and emit an env file you can source in provisioning jobs.
+- `scripts/build-offline-bundle.sh` accepts `--target-os` and `--target-arch` so you can build archives for any supported platform from a single host, auto-downloading the matching Trunk CLI when not provided.
+- The official container image already sets `PUNCHTRUNK_TRUNK_BINARY=/app/trunk`; combine it with a volume mount and `PUNCHTRUNK_AIRGAPPED=1` to reuse the embedded CLI without network access.
 - See `docs/INTEGRATION_GUIDE.md` for a step-by-step walkthrough on verifying the bundle, running the setup scripts, and wiring environment variables before running PunchTrunk in sealed networks.
 
 ### Diagnose offline readiness
@@ -289,6 +296,12 @@ See [Testing Strategy](docs/testing-strategy.md) for details.
 
 ---
 
+## Documentation
+
+- Browse the [PunchTrunk documentation index](docs/README.md) for tutorials, how-to guides, explanations, and reference material organised with Diátaxis.
+
+---
+
 ## Quality Gates
 
 PunchTrunk enforces quality gates at each pipeline stage:
@@ -297,7 +310,7 @@ PunchTrunk enforces quality gates at each pipeline stage:
 - **PR**: All tests pass, E2E validation, security scans, SARIF validation
 - **Release**: Multi-platform builds, container security, performance validation
 
-See [Quality Gates](docs/quality/QUALITY_GATES.md) for complete gate definitions.
+See [Quality Gates](docs/internal/quality/QUALITY_GATES.md) for the full internal checklist.
 
 ---
 
@@ -311,7 +324,7 @@ PunchTrunk follows a comprehensive deployment pipeline:
 4. **Release** → Multi-platform builds and container publishing
 5. **Post-Release** → Monitoring and validation
 
-See [Deployment Pipeline](docs/delivery/DEPLOYMENT_PIPELINE.md) and [E2E Strategy](docs/delivery/E2E_STRATEGY.md) for details.
+See [Deployment Pipeline](docs/internal/delivery/DEPLOYMENT_PIPELINE.md) and [E2E Strategy](docs/internal/delivery/E2E_STRATEGY.md) for details.
 
 ---
 

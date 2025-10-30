@@ -121,4 +121,4 @@ This test serves as the **final quality gate** before release.
 - Implement benchmark tests for performance tracking.
 - Add coverage reporting to CI with automated badge updates.
 - Create sample multi-language repositories for extended testing.
-- Document testing playbooks in `docs/runbooks/ephemeral-runners.md`.
+- Document testing playbooks in `docs/internal/runbooks/ephemeral-runners.md`.

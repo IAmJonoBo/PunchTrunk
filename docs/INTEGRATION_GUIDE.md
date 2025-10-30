@@ -22,6 +22,16 @@ This guide covers integrating PunchTrunk into CI/CD pipelines, ephemeral runners
 
 ### Installation
 
+**Offline Bundle (all-in-one):**
+
+```bash
+curl -L https://github.com/IAmJonoBo/PunchTrunk/releases/latest/download/punchtrunk-offline-<os>-<arch>.tar.gz -o punchtrunk-offline.tgz
+./scripts/setup-airgap.sh --bundle punchtrunk-offline.tgz --install-dir /opt/punchtrunk --force
+source /opt/punchtrunk/punchtrunk-airgap.env
+```
+
+The bundle includes PunchTrunk, the pinned Trunk CLI, `.trunk/` configs, optional cached toolchains, and an environment file that wires everything up for you.
+
 **Binary Installation:**
 
 ```bash
@@ -33,6 +43,8 @@ curl -fsSL https://raw.githubusercontent.com/IAmJonoBo/PunchTrunk/main/scripts/i
 ```bash
 docker pull ghcr.io/iamjonobo/punchtrunk:latest
 ```
+
+The container image exposes the baked-in Trunk CLI at `/app/trunk` and sets `PUNCHTRUNK_TRUNK_BINARY` automatically.
 
 ### Basic Usage
 
@@ -88,8 +100,8 @@ jobs:
           restore-keys: |
             trunk-${{ runner.os }}-
 
-      # Install Trunk CLI
-      - name: Install Trunk
+  # Optional: seed the Trunk installer cache (PunchTrunk auto-installs if missing)
+  - name: Install Trunk (optional)
         run: |
           curl https://get.trunk.io -fsSL | bash -s -- -y
           echo "${HOME}/.trunk/bin" >> $GITHUB_PATH
@@ -402,7 +414,12 @@ PunchTrunk provides an offline bundle workflow so agents can run without externa
 ```bash
 make offline-bundle
 # or customize the output
-./scripts/build-offline-bundle.sh --output-dir dist --bundle-name punchtrunk-offline.tar.gz
+./scripts/build-offline-bundle.sh \
+  --punchtrunk-binary ./bin/punchtrunk \
+  --target-os linux \
+  --target-arch amd64 \
+  --output-dir dist \
+  --bundle-name punchtrunk-offline-linux-amd64.tar.gz
 ```
 
 Useful flags include:
@@ -411,6 +428,8 @@ Useful flags include:
 - `--trunk-binary` to reuse a pre-installed Trunk CLI path when building on a staging host.
 - `--cache-dir` to embed an existing `~/.cache/trunk` so linters run without outbound downloads.
 - `--no-cache` to produce a minimal archive when storage is tight.
+- `--target-os` / `--target-arch` to fetch the correct Trunk binary for another platform from the same build host.
+- Omitting `--trunk-binary` instructs the script to auto-download the pinned Trunk release that matches `.trunk/trunk.yaml`.
 
 The script writes `<bundle>.tar.gz` and a companion `<bundle>.tar.gz.sha256` checksum to the chosen output directory.
 
@@ -439,6 +458,8 @@ export PUNCHTRUNK_AIRGAPPED=1
 ```bash
 ${PUNCHTRUNK_HOME}/bin/punchtrunk --mode hotspots --base-branch HEAD~1 --trunk-binary "${PUNCHTRUNK_TRUNK_BINARY}"
 ```
+
+The bundle ships a `README.txt` that mirrors these exports if you prefer to copy/paste. When you install with `setup-airgap.sh` or `setup-airgap.ps1`, an env file (`punchtrunk-airgap.env` / `punchtrunk-airgap.ps1`) is generated automatically for sourcing.
 
 ### Provision with setup scripts
 
@@ -490,6 +511,7 @@ ${PUNCHTRUNK_HOME}/bin/punchtrunk --mode diagnose-airgap \
 - `trunk/cache` – optional cached toolchain assets for offline execution.
 - `manifest.json` – metadata including creation timestamp and versions.
 - `checksums.txt` – SHA-256 hashes for every bundled file.
+- `README.txt` – manual setup instructions and environment exports.
 
 ## Container-Based Workflows
 
@@ -505,6 +527,8 @@ services:
     volumes:
       - .:/workspace
     working_dir: /workspace
+    environment:
+      PUNCHTRUNK_AIRGAPPED: "1" # reuse /app/trunk without downloads
     command: --mode fmt,lint,hotspots
 ```
 
@@ -526,7 +550,7 @@ hotspots:
  punchtrunk --mode hotspots --base-branch=origin/main
 
 docker-quality:
- docker run --rm -v $(PWD):/workspace -w /workspace \
+ docker run --rm -e PUNCHTRUNK_AIRGAPPED=1 -v $(PWD):/workspace -w /workspace \
   ghcr.io/iamjonobo/punchtrunk:latest \
     --mode fmt,lint,hotspots
 ```

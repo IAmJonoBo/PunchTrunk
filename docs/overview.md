@@ -29,18 +29,18 @@ PunchTrunk bundles Trunk CLI operations and hotspot analysis inside a single Go 
 
 ## Related Documents
 
-- `docs/workflows/local-dev.md` for day-to-day commands.
+- `docs/internal/workflows/local-dev.md` for day-to-day commands.
 - `docs/hotspots-methodology.md` for scoring details.
 - `docs/trunk-config.md` for linters and runtime pinning.
-- `docs/operations/ci.md` for pipeline integration.
+- `docs/internal/operations/ci.md` for pipeline integration.
 - `docs/ai/` for agent guardrails, evaluation plans, and Copilot usage.
 - `docs/development/` for coding standards and toolchain links.
-- `docs/delivery/` for release and CI summaries backed by the core guides above.
-- `docs/quality/` for QA checklists and quality gates.
-- `docs/templates/` for ADR, RFC, postmortem, and agent evaluation templates.
+- `docs/internal/delivery/` for release and CI summaries backed by the core guides above.
+- `docs/internal/quality/` for QA checklists and quality gates.
+- `docs/internal/templates/` for ADR, RFC, postmortem, and agent evaluation templates.
 
 ## Ongoing Maintenance
 
 - Revisit `go.mod` and `.trunk/trunk.yaml` quarterly to align with supported Go and Trunk CLI versions.
-- When bumping runtime or linter versions, update `docs/trunk-config.md` and `docs/workflows/local-dev.md` to keep setup steps accurate.
+- When bumping runtime or linter versions, update `docs/trunk-config.md` and `docs/internal/workflows/local-dev.md` to keep setup steps accurate.
 - Capture new architectural decisions as ADRs under `docs/adr/` so changes stay discoverable for future contributors.

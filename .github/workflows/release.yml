@@ -12,8 +12,6 @@ on:
 
 permissions:
   contents: write
-  packages: write
-  id-token: write # For cosign
 
 jobs:
   build:
@@ -80,15 +78,8 @@ jobs:
 
       - name: Build offline bundle
         run: |
-          # Map Go arch to bundle arch
           arch="${{ matrix.goarch }}"
-          if [ "$arch" = "amd64" ]; then arch="amd64"; fi
-          if [ "$arch" = "arm64" ]; then arch="arm64"; fi
-          # Map Go OS to bundle OS
           os="${{ matrix.goos }}"
-          if [ "$os" = "darwin" ]; then os="darwin"; fi
-          if [ "$os" = "linux" ]; then os="linux"; fi
-          if [ "$os" = "windows" ]; then os="windows"; fi
           bundle_name="punchtrunk-offline-${os}-${arch}.tar.gz"
           ./scripts/build-offline-bundle.sh \
             --punchtrunk-binary dist/${{ matrix.name }} \
@@ -108,7 +99,7 @@ jobs:
             dist/punchtrunk-offline-${{ matrix.goos }}-${{ matrix.goarch }}.tar.gz.sha256
           retention-days: 7
 
-      - name: Upload artifact
+      - name: Upload binary artifact
         uses: actions/upload-artifact@v5
         with:
           name: ${{ matrix.name }}
@@ -117,72 +108,11 @@ jobs:
             dist/${{ matrix.name }}.sha256
           retention-days: 7
 
-  docker:
-    name: Build and Push Container Image
-    runs-on: ubuntu-latest
-    timeout-minutes: 30
-    needs: build
-
-    steps:
-      - name: Checkout code
-        uses: actions/checkout@v5
-
-      - name: Set up Docker Buildx
-        uses: docker/setup-buildx-action@v3
-
-      - name: Log in to GitHub Container Registry
-        uses: docker/login-action@v3
-        with:
-          registry: ghcr.io
-          username: ${{ github.actor }}
-          password: ${{ secrets.GITHUB_TOKEN }}
-
-      - name: Extract version
-        id: version
-        run: |
-          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
-            VERSION="${{ github.event.inputs.tag }}"
-          else
-            VERSION="${GITHUB_REF#refs/tags/}"
-          fi
-          echo "version=${VERSION}" >> $GITHUB_OUTPUT
-          echo "version_short=${VERSION#v}" >> $GITHUB_OUTPUT
-
-      - name: Build and push Docker image
-        uses: docker/build-push-action@v6
-        id: docker_build
-        with:
-          context: .
-          platforms: linux/amd64,linux/arm64
-          push: true
-          tags: |
-            ghcr.io/${{ github.repository_owner }}/punchtrunk:${{ steps.version.outputs.version }}
-            ghcr.io/${{ github.repository_owner }}/punchtrunk:${{ steps.version.outputs.version_short }}
-            ghcr.io/${{ github.repository_owner }}/punchtrunk:latest
-          labels: |
-            org.opencontainers.image.title=PunchTrunk
-            org.opencontainers.image.description=Polyglot linting orchestrator with hotspot analysis
-            org.opencontainers.image.version=${{ steps.version.outputs.version }}
-            org.opencontainers.image.source=${{ github.repositoryUrl }}
-            org.opencontainers.image.revision=${{ github.sha }}
-          cache-from: type=gha
-          cache-to: type=gha,mode=max
-
-      - name: Install cosign
-        uses: sigstore/cosign-installer@v3
-
-      - name: Sign container image
-        env:
-          COSIGN_EXPERIMENTAL: "true"
-        run: |
-          cosign sign --yes \
-            ghcr.io/${{ github.repository_owner }}/punchtrunk@${{ steps.docker_build.outputs.digest }}
-
   release:
     name: Create GitHub Release
     runs-on: ubuntu-latest
     timeout-minutes: 15
-    needs: [build, docker]
+    needs: build
 
     steps:
       - name: Checkout code
@@ -235,36 +165,23 @@ jobs:
           sudo mv punchtrunk /usr/local/bin/
           ```
 
-          #### Container Image
+          #### Offline Bundle
+
+          Download the archive that matches your platform (e.g. `punchtrunk-offline-linux-amd64.tar.gz`) and extract it on the target host:
 
           ```bash
-          docker pull ghcr.io/${{ github.repository_owner }}/punchtrunk:${{ steps.version.outputs.version }}
-
-          # Run with current directory mounted
-          docker run --rm -v $(pwd):/workspace -w /workspace \
-            ghcr.io/${{ github.repository_owner }}/punchtrunk:${{ steps.version.outputs.version }} \
-            --mode hotspots
+          tar -xzf punchtrunk-offline-linux-amd64.tar.gz
+          export PUNCHTRUNK_HOME="$(pwd)/punchtrunk-offline-linux-amd64"
+          source "${PUNCHTRUNK_HOME}/punchtrunk-airgap.env"
           ```
 
-          #### Verification
-
-          Container images are signed with cosign (keyless OIDC):
-
-          ```bash
-          cosign verify \
-            --certificate-identity-regexp="^https://github.com/${{ github.repository }}.*" \
-            --certificate-oidc-issuer="https://token.actions.githubusercontent.com" \
-            ghcr.io/${{ github.repository_owner }}/punchtrunk:${{ steps.version.outputs.version }}
-          ```
-
-          Binary checksums are provided as `.sha256` files.
+          The environment file wires `PUNCHTRUNK_TRUNK_BINARY` and other variables so PunchTrunk runs without additional installs. Binary checksums are provided as `.sha256` files.
 
           ### What's Included
 
           - Multi-platform binaries (Linux, macOS, Windows on AMD64/ARM64)
-          - Container images for Linux AMD64/ARM64
-          - Signed container images with cosign
-          - SHA256 checksums for all binaries
+          - Offline bundles that include PunchTrunk, the pinned Trunk CLI, and repo config
+          - SHA256 checksums for all binaries and bundles
 
           ### Quick Start
 
@@ -283,14 +200,13 @@ jobs:
 
           - [README](https://github.com/${{ github.repository }}/blob/main/README.md)
           - [SARIF Schema Documentation](https://github.com/${{ github.repository }}/blob/main/docs/SARIF_SCHEMA.md)
-          - [Deployment Pipeline](https://github.com/${{ github.repository }}/blob/main/docs/delivery/DEPLOYMENT_PIPELINE.md)
+          - [Deployment Pipeline](https://github.com/${{ github.repository }}/blob/main/docs/internal/delivery/DEPLOYMENT_PIPELINE.md)
           - [Testing Strategy](https://github.com/${{ github.repository }}/blob/main/docs/testing-strategy.md)
 
           ### Changelog
 
           EOF
 
-          # Add git log since last tag
           LAST_TAG=$(git describe --tags --abbrev=0 HEAD^ 2>/dev/null || echo "")
           if [ -n "$LAST_TAG" ]; then
             echo "**Changes since ${LAST_TAG}:**" >> release-notes.md
@@ -331,27 +247,14 @@ jobs:
           fi
           echo "version=${VERSION}" >> $GITHUB_OUTPUT
 
-      - name: Test container image
-        run: |
-          docker pull ghcr.io/${{ github.repository_owner }}/punchtrunk:${{ steps.version.outputs.version }}
-          docker run --rm ghcr.io/${{ github.repository_owner }}/punchtrunk:${{ steps.version.outputs.version }} --help || true
-
-      - name: Verify container signature
-        run: |
-          cosign verify \
-            --certificate-identity-regexp="^https://github.com/${{ github.repository }}.*" \
-            --certificate-oidc-issuer="https://token.actions.githubusercontent.com" \
-            ghcr.io/${{ github.repository_owner }}/punchtrunk:${{ steps.version.outputs.version }}
-
       - name: Post-release summary
         run: |
           echo "✅ Release ${{ steps.version.outputs.version }} published successfully!"
           echo ""
           echo "📦 Artifacts:"
-          echo "  - Binaries: https://github.com/${{ github.repository }}/releases/tag/${{ steps.version.outputs.version }}"
-          echo "  - Container: ghcr.io/${{ github.repository_owner }}/punchtrunk:${{ steps.version.outputs.version }}"
+          echo "  - Binaries & bundles: https://github.com/${{ github.repository }}/releases/tag/${{ steps.version.outputs.version }}"
           echo ""
           echo "📝 Next steps:"
-          echo "  - Update ROADMAP.md with shipped items"
+          echo "  - Update docs/internal/ROADMAP.md with shipped items"
           echo "  - Announce release in discussions/social media"
           echo "  - Monitor GitHub Code Scanning uploads"
