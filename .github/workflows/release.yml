@@ -78,6 +78,36 @@ jobs:
           cd dist
           sha256sum ${{ matrix.name }} > ${{ matrix.name }}.sha256
 
+      - name: Build offline bundle
+        run: |
+          # Map Go arch to bundle arch
+          arch="${{ matrix.goarch }}"
+          if [ "$arch" = "amd64" ]; then arch="amd64"; fi
+          if [ "$arch" = "arm64" ]; then arch="arm64"; fi
+          # Map Go OS to bundle OS
+          os="${{ matrix.goos }}"
+          if [ "$os" = "darwin" ]; then os="darwin"; fi
+          if [ "$os" = "linux" ]; then os="linux"; fi
+          if [ "$os" = "windows" ]; then os="windows"; fi
+          bundle_name="punchtrunk-offline-${os}-${arch}.tar.gz"
+          ./scripts/build-offline-bundle.sh \
+            --punchtrunk-binary dist/${{ matrix.name }} \
+            --output-dir dist \
+            --bundle-name "$bundle_name" \
+            --target-os "$os" \
+            --target-arch "$arch" \
+            --no-cache \
+            --force
+
+      - name: Upload offline bundle artifact
+        uses: actions/upload-artifact@v5
+        with:
+          name: offline-bundle-${{ matrix.goos }}-${{ matrix.goarch }}
+          path: |
+            dist/punchtrunk-offline-${{ matrix.goos }}-${{ matrix.goarch }}.tar.gz
+            dist/punchtrunk-offline-${{ matrix.goos }}-${{ matrix.goarch }}.tar.gz.sha256
+          retention-days: 7
+
       - name: Upload artifact
         uses: actions/upload-artifact@v5
         with:
@@ -178,7 +208,7 @@ jobs:
       - name: Prepare release assets
         run: |
           mkdir -p release
-          find dist -type f \( -name "punchtrunk-*" -o -name "*.sha256" \) -exec cp {} release/ \;
+          find dist -type f \( -name "punchtrunk-*" -o -name "*.sha256" -o -name "punchtrunk-offline-*.tar.gz" \) -exec cp {} release/ \;
           ls -lah release/
 
       - name: Generate release notes

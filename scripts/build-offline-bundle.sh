@@ -25,11 +25,34 @@ Options:
 EOF
 }
 
+
+# Defaults for target platform
+TARGET_OS=""
+TARGET_ARCH=""
 trunk_exec="trunk"
 case "$(uname -s)" in
-MINGW* | MSYS* | CYGWIN* | Windows_NT) trunk_exec="trunk.exe" ;;
-*) trunk_exec="trunk" ;;
+	MINGW* | MSYS* | CYGWIN* | Windows_NT)
+		trunk_exec="trunk.exe"
+		TARGET_OS="windows"
+		;;
+	Darwin*)
+		trunk_exec="trunk"
+		TARGET_OS="darwin"
+		;;
+	Linux*)
+		trunk_exec="trunk"
+		TARGET_OS="linux"
+		;;
+	*)
+		trunk_exec="trunk"
+		;;
 esac
+TARGET_ARCH="$(uname -m | tr '[:upper:]' '[:lower:]')"
+if [[ "$TARGET_ARCH" == "x86_64" || "$TARGET_ARCH" == "amd64" ]]; then
+	TARGET_ARCH="amd64"
+elif [[ "$TARGET_ARCH" == "aarch64" || "$TARGET_ARCH" == "arm64" ]]; then
+	TARGET_ARCH="arm64"
+fi
 
 OUTPUT_DIR="${ROOT_DIR}/dist"
 BUNDLE_NAME=""
@@ -56,6 +79,14 @@ while [[ $# -gt 0 ]]; do
 		;;
 	--trunk-binary)
 		TRUNK_BINARY="$2"
+		shift 2
+		;;
+	--target-os)
+		TARGET_OS="$2"
+		shift 2
+		;;
+	--target-arch)
+		TARGET_ARCH="$2"
 		shift 2
 		;;
 	--cache-dir)
@@ -94,11 +125,48 @@ abspath() {
 	fi
 }
 
-PUNCHTRUNK_BINARY="$(abspath "$PUNCHTRUNK_BINARY")"
-TRUNK_BINARY="$(abspath "$TRUNK_BINARY")"
-CONFIG_DIR="$(abspath "$CONFIG_DIR")"
-CACHE_DIR="$(abspath "$CACHE_DIR")"
-OUTPUT_DIR="$(abspath "$OUTPUT_DIR")"
+
+	PUNCHTRUNK_BINARY="$(abspath "$PUNCHTRUNK_BINARY")"
+	CONFIG_DIR="$(abspath "$CONFIG_DIR")"
+	CACHE_DIR="$(abspath "$CACHE_DIR")"
+	OUTPUT_DIR="$(abspath "$OUTPUT_DIR")"
+
+	# If trunk binary not provided, auto-download for target platform
+	if [[ -z "${TRUNK_BINARY:-}" ]]; then
+		# Determine Trunk version from .trunk/trunk.yaml if present
+		TRUNK_VERSION="1.25.0"
+		if [[ -f "$CONFIG_DIR/trunk.yaml" ]]; then
+			v=$(grep -E '^\s*version:' "$CONFIG_DIR/trunk.yaml" | head -1 | awk '{print $2}')
+			if [[ -n "$v" ]]; then
+				TRUNK_VERSION="$v"
+			fi
+		fi
+		# Map arch for Trunk download
+		trunk_arch="$TARGET_ARCH"
+		if [[ "$TARGET_OS" == "darwin" && "$trunk_arch" == "amd64" ]]; then
+			trunk_arch="x86_64"
+		elif [[ "$TARGET_OS" == "linux" && "$trunk_arch" == "amd64" ]]; then
+			trunk_arch="x86_64"
+		elif [[ "$TARGET_OS" == "linux" && "$trunk_arch" == "arm64" ]]; then
+			trunk_arch="arm64"
+		fi
+		# Compose download URL
+		if [[ "$TARGET_OS" == "windows" ]]; then
+			trunk_url="https://trunk.io/releases/${TRUNK_VERSION}/trunk-${TRUNK_VERSION}-windows-x86_64.zip"
+			trunk_exec="trunk.exe"
+			trunk_tmp="$(mktemp -d)"
+			curl -Ls "$trunk_url" -o "$trunk_tmp/trunk.zip"
+			unzip -q "$trunk_tmp/trunk.zip" -d "$trunk_tmp"
+			TRUNK_BINARY="$trunk_tmp/trunk.exe"
+		else
+			trunk_url="https://trunk.io/releases/${TRUNK_VERSION}/trunk-${TRUNK_VERSION}-${TARGET_OS}-${trunk_arch}.tar.gz"
+			trunk_tmp="$(mktemp -d)"
+			curl -Ls "$trunk_url" | tar -xz -C "$trunk_tmp"
+			TRUNK_BINARY="$trunk_tmp/trunk"
+		fi
+	fi
+
+	TRUNK_BINARY="$(abspath "$TRUNK_BINARY")"
 
 if [[ ! -f $PUNCHTRUNK_BINARY ]]; then
 	printf "error: PunchTrunk binary not found at %s\n" "$PUNCHTRUNK_BINARY" >&2
@@ -111,7 +179,7 @@ fi
 
 if [[ ! -f $TRUNK_BINARY ]]; then
 	printf "error: trunk binary not found at %s\n" "$TRUNK_BINARY" >&2
-	printf "hint: run 'trunk init' or pass --trunk-binary\n" >&2
+	printf "hint: run 'trunk init', pass --trunk-binary, or let the script auto-download for --target-os/--target-arch\n" >&2
 	exit 1
 fi
 
