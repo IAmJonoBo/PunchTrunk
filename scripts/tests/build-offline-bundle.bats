@@ -184,6 +184,11 @@ EOF
   bundle_path="${dist_dir}/${expected_bundle}"
   [ -f "${bundle_path}" ]
 
+<<<<<<< HEAD
   run bash -c "tar -tf \"${bundle_path}\" | grep 'trunk/bin/trunk.exe'"
+=======
+  run tar -tf "${bundle_path}"
+>>>>>>> 9b5cdee (feat: add Semgrep integration and update build scripts; enhance QA documentation)
   [ "$status" -eq 0 ]
+  [[ "$output" == *"trunk/bin/trunk.exe"* ]]
 }

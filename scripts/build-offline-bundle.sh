@@ -30,8 +30,14 @@ EOF
 }
 
 normalize_os() {
+<<<<<<< HEAD
 	local os="${1-}"
 	os="${os,,}"
+=======
+	local os_raw="${1-}"
+	local os
+	os="$(printf '%s' "${os_raw}" | tr '[:upper:]' '[:lower:]')"
+>>>>>>> 9b5cdee (feat: add Semgrep integration and update build scripts; enhance QA documentation)
 	case "${os}" in
 	"")
 		printf '%s' ""
@@ -52,8 +58,14 @@ normalize_os() {
 }
 
 normalize_arch() {
+<<<<<<< HEAD
 	local arch="${1-}"
 	arch="${arch,,}"
+=======
+	local arch_raw="${1-}"
+	local arch
+	arch="$(printf '%s' "${arch_raw}" | tr '[:upper:]' '[:lower:]')"
+>>>>>>> 9b5cdee (feat: add Semgrep integration and update build scripts; enhance QA documentation)
 	case "${arch}" in
 	"")
 		printf '%s' ""
@@ -71,6 +83,7 @@ normalize_arch() {
 }
 
 # Defaults for target platform
+<<<<<<< HEAD
 host_kernel=""
 if ! host_kernel=$(uname -s); then
 	printf "error: unable to detect host operating system\n" >&2
@@ -88,6 +101,15 @@ fi
 HOST_ARCH=$(normalize_arch "${host_machine}")
 if [[ -z ${HOST_ARCH} ]]; then
 	HOST_ARCH=$(printf '%s' "${host_machine}" | tr '[:upper:]' '[:lower:]')
+=======
+HOST_OS="$(normalize_os "$(uname -s)")"
+if [[ -z ${HOST_OS} ]]; then
+	HOST_OS="$(uname -s | tr '[:upper:]' '[:lower:]')"
+fi
+HOST_ARCH="$(normalize_arch "$(uname -m)")"
+if [[ -z ${HOST_ARCH} ]]; then
+	HOST_ARCH="$(uname -m | tr '[:upper:]' '[:lower:]')"
+>>>>>>> 9b5cdee (feat: add Semgrep integration and update build scripts; enhance QA documentation)
 fi
 trunk_exec="trunk"
 if [[ ${HOST_OS} == "windows" ]]; then
@@ -228,6 +250,7 @@ hydrate_warnings_json() {
 		else
 			printf ','
 		fi
+<<<<<<< HEAD
 		local escaped_line
 		escaped_line=$(json_escape "${line}")
 		escape_status=$?
@@ -235,6 +258,9 @@ hydrate_warnings_json() {
 			continue
 		fi
 		printf '"%s"' "${escaped_line}"
+=======
+		printf '"%s"' "$(json_escape "${line}")"
+>>>>>>> 9b5cdee (feat: add Semgrep integration and update build scripts; enhance QA documentation)
 	done <<<"${HYDRATE_WARNINGS_TEXT}"
 	printf ']'
 }
@@ -282,6 +308,7 @@ OUTPUT_DIR="$(abspath "${OUTPUT_DIR}")"
 TRUNK_CLI_VERSION=""
 if [[ -f "${CONFIG_DIR}/trunk.yaml" ]]; then
 	TRUNK_CLI_VERSION=$(awk '
+<<<<<<< HEAD
                 /^[[:space:]]*cli:/ { in_cli=1; next }
                 in_cli && /^[^[:space:]]/ { in_cli=0 }
                 in_cli && /^[[:space:]]*version:/ {
@@ -292,6 +319,19 @@ if [[ -f "${CONFIG_DIR}/trunk.yaml" ]]; then
                         exit
                 }
         ' "${CONFIG_DIR}/trunk.yaml")
+=======
+		/^[[:space:]]*cli:/ { in_cli=1; next }
+		in_cli && /^[^[:space:]]/ { in_cli=0 }
+		in_cli && /^[[:space:]]*version:/ {
+			sub(/^[[:space:]]*version:[[:space:]]*/, "", $0)
+			gsub(/"/, "", $0)
+			gsub(/[[:space:]]+$/, "", $0)
+			print $0
+			exit
+		}
+	' "${CONFIG_DIR}/trunk.yaml")
+	TRUNK_CLI_VERSION="${TRUNK_CLI_VERSION}" # ensure defined
+>>>>>>> 9b5cdee (feat: add Semgrep integration and update build scripts; enhance QA documentation)
 fi
 
 TRUNK_BINARY_SOURCE="user-supplied"
@@ -306,8 +346,12 @@ maybe_download_trunk() {
 	local trunk_version="$1"
 	local os="$2"
 	local arch="$3"
+<<<<<<< HEAD
 	local trunk_tmp
 	trunk_tmp=$(mktemp -d)
+=======
+	local trunk_tmp="$(mktemp -d)"
+>>>>>>> 9b5cdee (feat: add Semgrep integration and update build scripts; enhance QA documentation)
 	download_tmp="${trunk_tmp}"
 	local trunk_url=""
 	local resolved_arch="${arch}"
@@ -385,6 +429,10 @@ HYDRATE_WARNINGS_COUNT=0
 hydrate_log=""
 
 if [[ ${HYDRATE} -eq 1 ]]; then
+<<<<<<< HEAD
+=======
+	HYDRATE_ATTEMPTED=true
+>>>>>>> 9b5cdee (feat: add Semgrep integration and update build scripts; enhance QA documentation)
 	HYDRATE_STATUS="success"
 	if [[ ! -d ${CACHE_DIR} ]]; then
 		mkdir -p "${CACHE_DIR}"
@@ -404,10 +452,17 @@ if [[ -z ${BUNDLE_NAME} ]]; then
 	os="${TARGET_OS}"
 	arch="${TARGET_ARCH}"
 	if [[ -z ${os} ]]; then
+<<<<<<< HEAD
 		os="${HOST_OS}"
 	fi
 	if [[ -z ${arch} ]]; then
 		arch="${HOST_ARCH}"
+=======
+		os="$(normalize_os "$(uname -s)")"
+	fi
+	if [[ -z ${arch} ]]; then
+		arch="$(normalize_arch "$(uname -m)")"
+>>>>>>> 9b5cdee (feat: add Semgrep integration and update build scripts; enhance QA documentation)
 	fi
 	if [[ -z ${os} ]]; then
 		os="unknown"
@@ -447,6 +502,7 @@ cp "${TRUNK_BINARY}" "${bundle_root}/trunk/bin/${trunk_exec}"
 copy_directory() {
 	local source_dir="$1"
 	local target_dir="$2"
+<<<<<<< HEAD
 
 	if [[ ! -d ${source_dir} ]]; then
 		return
@@ -470,6 +526,16 @@ copy_directory() {
 		printf "error: failed to copy contents from %s to %s\n" "${source_dir}" "${target_dir}" >&2
 		return 1
 	fi
+=======
+	mkdir -p "${target_dir}"
+	if [[ ! -d ${source_dir} ]]; then
+		return
+	fi
+	if [[ -z "$(ls -A "${source_dir}" 2>/dev/null)" ]]; then
+		return
+	fi
+	tar -C "${source_dir}" -cf - . | tar -C "${target_dir}" -xf -
+>>>>>>> 9b5cdee (feat: add Semgrep integration and update build scripts; enhance QA documentation)
 }
 
 copy_directory "${CONFIG_DIR}" "${bundle_root}/trunk/config"
@@ -487,6 +553,7 @@ fi
 
 CONFIG_SHA=""
 if [[ -f "${CONFIG_DIR}/trunk.yaml" ]]; then
+<<<<<<< HEAD
 	set +e
 	computed_sha=$(compute_sha256 "${CONFIG_DIR}/trunk.yaml" 2>/dev/null)
 	sha_status=$?
@@ -494,6 +561,9 @@ if [[ -f "${CONFIG_DIR}/trunk.yaml" ]]; then
 	if ((sha_status == 0)); then
 		CONFIG_SHA="${computed_sha}"
 	else
+=======
+	if ! CONFIG_SHA=$(compute_sha256 "${CONFIG_DIR}/trunk.yaml"); then
+>>>>>>> 9b5cdee (feat: add Semgrep integration and update build scripts; enhance QA documentation)
 		CONFIG_SHA=""
 	fi
 fi
@@ -608,6 +678,7 @@ EOF
 
 checksums_path="${bundle_root}/checksums.txt"
 : >"${checksums_path}"
+<<<<<<< HEAD
 checksums_listing_tmp=$(mktemp "${TMPDIR:-/tmp}/punchtrunk-files.XXXXXX")
 if ! LC_ALL=C find "${bundle_root}" -type f ! -name 'checksums.txt' -print | LC_ALL=C sort >"${checksums_listing_tmp}"; then
 	printf "error: unable to enumerate bundle contents\n" >&2
@@ -636,6 +707,26 @@ if ((bundle_hash_status != 0)); then
 fi
 printf "%s  %s\n" "${bundle_hash}" "$(basename "${OUTPUT_PATH}")" >"${OUTPUT_PATH}.sha256"
 
+=======
+while IFS= read -r file; do
+	hash="$(compute_sha256 "${file}")" || {
+		printf "error: unable to compute checksum for %s\n" "${file}" >&2
+		exit 1
+	}
+	rel_path="${file#"${bundle_root}"/}"
+	printf "%s  %s\n" "${hash}" "${rel_path}" >>"${checksums_path}"
+done < <(LC_ALL=C find "${bundle_root}" -type f ! -name 'checksums.txt' -print | sort)
+
+mkdir -p "${OUTPUT_DIR}"
+tar -C "${workdir}" -czf "${OUTPUT_PATH}" "${bundle_root_name}"
+
+bundle_hash="$(compute_sha256 "${OUTPUT_PATH}")" || {
+	printf "error: unable to compute checksum for %s\n" "${OUTPUT_PATH}" >&2
+	exit 1
+}
+printf "%s  %s\n" "${bundle_hash}" "$(basename "${OUTPUT_PATH}")" >"${OUTPUT_PATH}.sha256"
+
+>>>>>>> 9b5cdee (feat: add Semgrep integration and update build scripts; enhance QA documentation)
 if [[ ${HYDRATE_WARNINGS_COUNT} -gt 0 ]]; then
 	printf "warning: hydration encountered issues while preparing caches:\n" >&2
 	while IFS= read -r warn; do

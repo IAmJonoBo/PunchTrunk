@@ -36,8 +36,7 @@ setup() {
   run env CGO_ENABLED=0 go build -o "${punch_bin}" ./cmd/punchtrunk
   [ "$status" -eq 0 ] || { echo "go build failed"; echo "$output"; return 1; }
 
-  trunk_dir="${BATS_TMPDIR}/trunk"
-  mkdir -p "${trunk_dir}"
+  trunk_dir="$(mktemp -d "${BATS_TMPDIR}/trunk.XXXXXX")"
   case "$(uname -s)" in
     MINGW*|MSYS*|CYGWIN*|Windows_NT)
       trunk_stub="${trunk_dir}/trunk.exe"

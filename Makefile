@@ -3,7 +3,11 @@ BIN := bin/punchtrunk
 VERSION ?= dev
 LDFLAGS := -s -w -X main.Version=$(VERSION)
 
+<<<<<<< HEAD
 .PHONY: help build run fmt lint hotspots test offline-bundle eval-hotspots security validate-env prep-runner
+=======
+.PHONY: build run fmt lint hotspots test offline-bundle eval-hotspots semgrep
+>>>>>>> 9b5cdee (feat: add Semgrep integration and update build scripts; enhance QA documentation)
 
 # Default target: show help
 .DEFAULT_GOAL := help
@@ -46,6 +50,7 @@ hotspots: build ## Compute and export hotspots to SARIF
 eval-hotspots: build ## Evaluate hotspots with scoring details
 	./scripts/eval-hotspots.sh
 
+<<<<<<< HEAD
 offline-bundle: build ## Build offline bundle for air-gapped environments
 	./scripts/build-offline-bundle.sh --output-dir dist
 
@@ -73,3 +78,10 @@ prep-runner: build ## Prepare runner by hydrating caches and running health chec
 		--punchtrunk=$(BIN) \
 		--json-output=reports/preflight.json
 
+=======
+semgrep:
+	./scripts/run-semgrep.sh
+
+offline-bundle: build
+	./scripts/build-offline-bundle.sh --output-dir dist
+>>>>>>> 9b5cdee (feat: add Semgrep integration and update build scripts; enhance QA documentation)
